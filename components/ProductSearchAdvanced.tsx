@@ -10,13 +10,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter } from "lucide-react";
+import { Filter, Search } from "lucide-react";
 import { type Product, type Category } from "@/lib/api";
 
 interface ProductSearchProps {
   products: Product[];
   categories?: Category[];
   units?: string[];
+  initialCategory?: string;
   onResultsChange?: (results: Product[], filters: FilterState) => void;
 }
 
@@ -50,15 +51,23 @@ export default function ProductSearch({
   products,
   categories = [],
   units = [],
+  initialCategory = "all",
   onResultsChange,
 }: ProductSearchProps) {
   const [filters, setFilters] = useState<FilterState>({
     search: "",
-    category: "all",
+    category: initialCategory,
     unit: "all",
     sortBy: "name",
   });
-  
+
+  // Sync initialCategory from props
+  useEffect(() => {
+    if (initialCategory !== filters.category) {
+      setFilters(prev => ({ ...prev, category: initialCategory }));
+    }
+  }, [initialCategory]);
+
   // Debounced версия поиска (для плавного UX)
   const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
 
@@ -79,12 +88,16 @@ export default function ProductSearch({
     if (debouncedSearch.trim()) {
       const query = normalize(debouncedSearch);
       results = results.filter((product) => {
+        const category = categories.find(c => c.id === product.category_id);
+        const categoryName = category ? (category.name_ru || category.name_en || category.name) : "";
+        
         return (
           normalize(product.name_en).includes(query) ||
           normalize(product.name_ru).includes(query) ||
           normalize(product.name_pl).includes(query) ||
           normalize(product.name_uk).includes(query) ||
-          normalize(product.description).includes(query)
+          normalize(product.description).includes(query) ||
+          normalize(categoryName).includes(query)
         );
       });
     }
@@ -141,80 +154,57 @@ export default function ProductSearch({
     filters.sortBy !== "name";
 
   return (
-    <div className="space-y-4">
-      {/* Search Input - shadcn Input */}
-      <Input
-        type="text"
-        value={filters.search}
-        onChange={handleSearchChange}
-        placeholder="Найти продукт..."
-      />
-      
-      <p className="text-xs text-muted-foreground">
-        Поддерживает русский, английский, польский и украинский языки
-      </p>
+    <div className="flex flex-col md:flex-row items-center gap-4 w-full">
+      {/* Search Input - Ultra Modern */}
+      <div className="relative flex-1 w-full group">
+        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+          <Search className="h-5 w-5 text-muted-foreground/40 group-focus-within:text-primary transition-colors duration-300" />
+        </div>
+        <Input
+          type="text"
+          value={filters.search}
+          onChange={handleSearchChange}
+          placeholder="Поиск по названию, описанию или категории..."
+          className="pl-12 h-14 bg-white/5 border-border/40 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all rounded-[1.25rem] text-base font-medium placeholder:text-muted-foreground/40 shadow-inner"
+        />
+        {filters.search && (
+          <button 
+            onClick={() => setFilters(prev => ({ ...prev, search: "" }))}
+            className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-muted/50 transition-colors"
+          >
+            <Filter className="h-4 w-4 text-muted-foreground/40" />
+          </button>
+        )}
+      </div>
 
-      {/* Filters Row */}
-      <div className="flex flex-wrap gap-2">
-        {/* Category Filter */}
-        <Select value={filters.category} onValueChange={(value) => setFilters((prev) => ({ ...prev, category: value }))}>
-          <SelectTrigger className="h-10 min-w-[180px] bg-popover border border-border shadow-sm hover:bg-accent">
-            <SelectValue placeholder="Категория" />
-          </SelectTrigger>
-          <SelectContent className="z-50 min-w-[180px] rounded-md bg-popover border border-border shadow-md backdrop-blur-0">
-            <SelectItem value="all">Все категории</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id}>
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Unit Filter */}
-        <Select value={filters.unit} onValueChange={(value) => setFilters((prev) => ({ ...prev, unit: value }))}>
-          <SelectTrigger className="h-10 min-w-[180px] bg-popover border border-border shadow-sm hover:bg-accent">
-            <SelectValue placeholder="Единица" />
-          </SelectTrigger>
-          <SelectContent className="z-50 min-w-[180px] rounded-md bg-popover border border-border shadow-md backdrop-blur-0">
-            <SelectItem value="all">Все единицы</SelectItem>
-            {units.map((unit) => (
-              <SelectItem key={unit} value={unit}>
-                {UNIT_TRANSLATIONS[unit] || unit}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Sort */}
+      <div className="flex items-center gap-3 w-full md:w-auto">
+        {/* Sort - Elegant Select */}
         <Select value={filters.sortBy} onValueChange={(value) => setFilters((prev) => ({ ...prev, sortBy: value as FilterState["sortBy"] }))}>
-          <SelectTrigger className="h-10 min-w-[180px] bg-popover border border-border shadow-sm hover:bg-accent">
-            <SelectValue placeholder="Сортировка" />
+          <SelectTrigger className="h-14 min-w-[180px] bg-white/5 border-border/40 rounded-[1.25rem] focus:ring-2 focus:ring-primary/20 transition-all hover:bg-white/10 shadow-inner">
+            <div className="flex items-center gap-3 px-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Сортировка</span>
+              <div className="font-bold text-sm text-foreground/90">
+                <SelectValue placeholder="Сортировка" />
+              </div>
+            </div>
           </SelectTrigger>
-          <SelectContent className="z-50 min-w-[180px] rounded-md bg-popover border border-border shadow-md backdrop-blur-0">
-            <SelectItem value="name">A → Z</SelectItem>
-            <SelectItem value="newest">Новые</SelectItem>
-            <SelectItem value="used">Популярные</SelectItem>
+          <SelectContent align="end" className="rounded-2xl border-border/40 shadow-2xl bg-card/90 backdrop-blur-xl ring-1 ring-white/10">
+            <SelectItem value="name" className="rounded-xl font-bold text-sm py-3 focus:bg-primary/10">По алфавиту [A-Z]</SelectItem>
+            <SelectItem value="newest" className="rounded-xl font-bold text-sm py-3 focus:bg-primary/10">Сначала новые</SelectItem>
+            <SelectItem value="used" className="rounded-xl font-bold text-sm py-3 focus:bg-primary/10">По пулярности</SelectItem>
           </SelectContent>
         </Select>
 
         {/* Clear Filters */}
         {hasActiveFilters && (
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
             onClick={handleClear}
-            className="h-10"
+            className="h-14 px-6 rounded-[1.25rem] bg-destructive/5 text-destructive hover:bg-destructive hover:text-white transition-all duration-300 font-bold text-xs uppercase tracking-widest border border-destructive/10"
           >
-            <Filter className="h-4 w-4 mr-2" />
-            Очистить
+            Сброс
           </Button>
         )}
-      </div>
-
-      {/* Results Count */}
-      <div className="text-sm text-muted-foreground pt-2">
-        Найдено: <span className="font-semibold text-foreground">{filteredProducts.length}</span> продуктов
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getProducts, getCategories, deleteProduct, type Product, type Category } from "@/lib/api";
@@ -20,46 +20,8 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, LogOut, Package, Search, Camera, Loader2, Users } from "lucide-react";
 import ProductSearchAdvanced from "@/components/ProductSearchAdvanced";
-
-// Перевод категорий на русский
-const CATEGORY_TRANSLATIONS: Record<string, string> = {
-  "Dairy & Eggs": "Молочные продукты и яйца",
-  "Meat & Poultry": "Мясо и птица",
-  "Fish & Seafood": "Рыба и морепродукты",
-  "Vegetables": "Овощи",
-  "Fruits": "Фрукты",
-  "Grains & Pasta": "Крупы и макароны",
-  "Oils & Fats": "Масла и жиры",
-  "Spices & Herbs": "Специи и травы",
-  "Condiments & Sauces": "Приправы и соусы",
-  "Beverages": "Напитки",
-  "Nuts & Seeds": "Орехи и семена",
-  "Legumes": "Бобовые",
-  "Sweets & Baking": "Сладости и выпечка",
-  "Canned & Preserved": "Консервы",
-  "Frozen": "Замороженные продукты"
-};
-
-function translateCategory(englishName: string): string {
-  return CATEGORY_TRANSLATIONS[englishName] || englishName;
-}
-
-// Перевод единиц измерения на русский
-const UNIT_TRANSLATIONS: Record<string, string> = {
-  "gram": "грамм",
-  "kilogram": "килограмм",
-  "liter": "литр",
-  "milliliter": "миллилитр",
-  "piece": "штука",
-  "bunch": "пучок",
-  "can": "банка",
-  "bottle": "бутылка",
-  "package": "упаковка"
-};
-
-function translateUnit(englishUnit: string): string {
-  return UNIT_TRANSLATIONS[englishUnit] || englishUnit;
-}
+import { ModeToggle } from "@/components/mode-toggle";
+import ProductGrid from "@/components/ProductGrid";
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -67,11 +29,23 @@ export default function ProductsPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [productToDelete, setProductToDelete] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const router = useRouter();
+
+  // Calculate product counts per category
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: products.length };
+    products.forEach(p => {
+      if (p.category_id) {
+        counts[p.category_id] = (counts[p.category_id] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [products]);
+
+  const handleSearchResults = useCallback((results: Product[]) => {
+    setSearchResults(results);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -107,14 +81,12 @@ export default function ProductsPage() {
   }
 
   async function handleDelete(id: string) {
-    const token = getToken();
+    const token = getToken(); 
     if (!token) return;
 
     try {
       await deleteProduct(token, id);
       setProducts(products.filter(p => p.id !== id));
-      setDeleteDialogOpen(false);
-      setProductToDelete(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete product");
     }
@@ -125,27 +97,10 @@ export default function ProductsPage() {
     router.push("/login");
   }
 
-  // Get filtered products based on selected category and search
-  function getFilteredProducts() {
-    let filtered = products;
-
-    // Apply category filter
-    if (selectedCategory !== "all") {
-      filtered = filtered.filter(p => p.category_id === selectedCategory);
-    }
-
-    // Apply search filter (if search results exist, use them)
-    if (searchResults.length > 0) {
-      filtered = filtered.filter(p => searchResults.some(sr => sr.id === p.id));
-    }
-
-    return filtered;
-  }
-
   // Get category name by ID
   function getCategoryName(categoryId: string) {
     const category = categories.find(c => c.id === categoryId);
-    return category?.name || "Unknown Category";
+    return category?.name_ru || category?.name_en || category?.name || "Unknown Category";
   }
 
   if (loading) {
@@ -159,206 +114,96 @@ export default function ProductsPage() {
     );
   }
 
-  const filteredProducts = getFilteredProducts();
-
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-4xl font-bold tracking-tight">Продукты</h1>
-          <p className="text-muted-foreground mt-2">
-            Управление каталогом продуктов
+    <div className="space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-700">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
+            Каталог
+          </h1>
+          <p className="text-muted-foreground text-base max-w-md">
+            Интеллектуальное управление вашим ассортиментом в реальном времени.
           </p>
         </div>
-        <div className="flex gap-3">
-          <Link href="/users">
-            <Button variant="secondary" size="lg">
-              <Users className="mr-2 h-5 w-5" />
-              Пользователи
-            </Button>
-          </Link>
-          <Link href="/products/new">
-            <Button size="lg">
-              <Plus className="mr-2 h-5 w-5" />
-              Добавить продукт
-            </Button>
-          </Link>
+        <div className="flex items-center gap-3">
           <Button 
-            variant="outline"
-            size="lg"
-            onClick={handleLogout}
+            onClick={() => router.push("/products/new")} 
+            className="h-12 px-8 rounded-2xl shadow-xl shadow-primary/20 hover:shadow-primary/40 transition-all hover:scale-[1.02] active:scale-[0.98] font-bold text-base bg-primary text-primary-foreground border-none"
           >
-            <LogOut className="mr-2 h-5 w-5" />
-            Выйти
+            <Plus className="mr-2 h-5 w-5 stroke-[3]" />
+            Новый продукт
           </Button>
         </div>
       </div>
 
-      {error && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Search Component */}
-      <div className="mb-6">
-        <ProductSearchAdvanced 
-          products={products}
-          categories={categories}
-          units={[...new Set(products.map(p => p.unit).filter(Boolean))]}
-          onResultsChange={(results) => {
-            setSearchResults(results);
-          }}
-        />
-      </div>
-
-      {/* Category Tabs */}
-      <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="mb-6">
-        <TabsList className="w-full justify-start overflow-x-auto flex-wrap h-auto">
-          <TabsTrigger value="all" className="flex-shrink-0">
-            Все ({products.length})
-          </TabsTrigger>
-          {categories.map((category) => {
-            const count = products.filter(p => p.category_id === category.id).length;
-            return (
-              <TabsTrigger 
-                key={category.id} 
-                value={category.id}
-                className="flex-shrink-0"
-              >
-                {translateCategory(category.name)} ({count})
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-      </Tabs>
-
-      {/* Products Grid */}
-      {products.length === 0 ? (
-        <Card className="text-center py-12">
-          <CardContent className="pt-6">
-            <Package className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-            <h2 className="text-2xl font-semibold mb-2">Нет продуктов</h2>
-            <p className="text-muted-foreground mb-6">
-              Создайте первый продукт, чтобы начать!
-            </p>
-            <Link href="/products/new">
-              <Button size="lg">
-                <Plus className="mr-2 h-5 w-5" />
-                Создать первый продукт
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      ) : filteredProducts.length === 0 ? (
-        <Card className="text-center py-12">
-          <CardContent className="pt-6">
-            <Search className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-            <h2 className="text-2xl font-semibold mb-2">Нет продуктов в этой категории</h2>
-            <p className="text-muted-foreground">
-              Выберите другую категорию или добавьте новый продукт.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredProducts.map((product) => (
-            <Card key={product.id} className="overflow-hidden group cursor-pointer hover:shadow-xl transition-shadow duration-300 p-0">
-              <div className="relative w-full aspect-square">
-                {product.image_url ? (
-                  <>
-                    <img
-                      src={product.image_url}
-                      alt={product.name_ru || product.name_en}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    {/* Gradient overlay - убирается при hover */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent group-hover:opacity-0 transition-opacity duration-300" />
-                  </>
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-muted">
-                    <div className="text-center text-muted-foreground">
-                      <Camera className="h-12 w-12 mx-auto mb-2" />
-                      <p className="text-sm">Нет изображения</p>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Content overlay */}
-                <div className="absolute inset-0 flex flex-col justify-end p-4">
-                  {/* Text content - скрывается при hover */}
-                  <div className="transition-all duration-300 transform translate-y-0 group-hover:translate-y-full group-hover:opacity-0 mb-3">
-                    <div className="bg-black/60 backdrop-blur-sm p-3 rounded-lg">
-                      <h3 className="text-white font-bold text-lg line-clamp-2 mb-1">
-                        {product.name_ru || product.name_en}
-                      </h3>
-                      <p className="text-white/80 text-sm mb-1">
-                        Единица: {translateUnit(product.unit)}
-                      </p>
-                      {product.description && (
-                        <p className="text-white/70 text-xs line-clamp-2">
-                          {product.description}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Buttons - остаются полупрозрачными */}
-                  <div className="flex gap-2 transition-all duration-300 group-hover:opacity-40">
-                    <Link href={`/products/${product.id}`} className="flex-1">
-                      <Button variant="secondary" className="w-full group-hover:text-black transition-colors duration-300" size="sm">
-                        Редактировать
-                      </Button>
-                    </Link>
-                    <Button 
-                      variant="destructive"
-                      size="sm"
-                      className="flex-1 group-hover:text-black transition-colors duration-300"
-                      onClick={(e) => {
-                      e.preventDefault();
-                      setProductToDelete(product.id);
-                      setDeleteDialogOpen(true);
-                    }}
-                  >
-                    Удалить
-                  </Button>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ))}
+      <div className="glass rounded-[2rem] p-6 md:p-8 space-y-8 ring-1 ring-white/10 shadow-2xl">
+        <div className="flex flex-col lg:flex-row items-center gap-6">
+          <div className="flex-1 w-full">
+            <ProductSearchAdvanced 
+              products={products}
+              categories={categories} 
+              initialCategory={selectedCategory}
+              onResultsChange={handleSearchResults}
+            />
+          </div>
         </div>
-      )}
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Удалить продукт?</DialogTitle>
-            <DialogDescription>
-              Это действие нельзя отменить. Продукт будет удален безвозвратно.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setDeleteDialogOpen(false);
-                setProductToDelete(null);
-              }}
-            >
-              Отмена
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={() => productToDelete && handleDelete(productToDelete)}
-            >
-              Удалить
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <div className="w-full">
+          <div className="pb-4 border-b border-border/40">
+            <div className="relative">
+              <div className="flex items-center overflow-x-auto custom-scrollbar scroll-smooth pb-4">
+                <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="w-full">
+                  <TabsList className="bg-transparent h-auto p-0 flex gap-3 w-max">
+                    <TabsTrigger 
+                      value="all" 
+                      className="group flex items-center gap-2.5 px-6 py-2.5 h-11 rounded-2xl border border-transparent data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=active]:shadow-primary/20 transition-all text-sm font-bold bg-muted/30 hover:bg-muted/50"
+                    >
+                      <span>Все товары</span>
+                      <Badge variant="secondary" className="px-2 py-0.5 h-5 min-w-[22px] justify-center text-[10px] font-black rounded-lg border-none bg-muted group-data-[state=active]:bg-white group-data-[state=active]:text-primary">
+                        {categoryCounts.all}
+                      </Badge>
+                    </TabsTrigger>
+                    
+                    <div className="w-px h-6 bg-border/40 mx-2 self-center" />
+
+                    {categories.map(cat => (
+                      <TabsTrigger 
+                        key={cat.id} 
+                        value={cat.id} 
+                        className="group flex items-center gap-2.5 px-6 py-2.5 h-11 rounded-2xl border border-transparent data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=active]:shadow-primary/20 transition-all text-sm font-bold bg-muted/30 hover:bg-muted/50"
+                      >
+                        {cat.icon && <span className="text-lg leading-none transition-transform group-hover:scale-125">{cat.icon}</span>}
+                        <span className="whitespace-nowrap">
+                          {cat.name_ru || cat.name_en || cat.name}
+                        </span>
+                        <Badge variant="secondary" className="px-2 py-0.5 h-5 min-w-[22px] justify-center text-[10px] font-black rounded-lg border-none bg-muted group-data-[state=active]:bg-white group-data-[state=active]:text-primary transition-colors">
+                          {categoryCounts[cat.id] || 0}
+                        </Badge>
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 min-h-[400px]">
+            {error && (
+              <Alert variant="destructive" className="mb-6 rounded-2xl bg-destructive/10 border-destructive/20 text-destructive">
+                <AlertDescription className="font-medium">{error}</AlertDescription>
+              </Alert>
+            )}
+
+            <ProductGrid
+              products={searchResults}
+              categories={categories}
+              loading={loading}
+              onEdit={(p) => router.push(`/products/${p.id}`)}
+              onDelete={handleDelete}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -21,6 +21,7 @@ import {
 import { Loader2, Users, Building2, ArrowLeft, Search, Trash2, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
+import { ModeToggle } from "@/components/mode-toggle";
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -156,21 +157,21 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-4xl font-bold tracking-tight">Пользователи</h1>
-          <p className="text-muted-foreground mt-2">
-            Управление зарегистрированными пользователями
-          </p>
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="flex items-center gap-4">
+          <Link href="/products">
+            <Button variant="outline" size="icon">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Пользователи</h1>
+            <p className="text-muted-foreground text-sm">
+              Управление зарегистрированными ресторанами
+            </p>
+          </div>
         </div>
-        <Link href="/products">
-          <Button variant="outline" size="lg">
-            <ArrowLeft className="mr-2 h-5 w-5" />
-            К продуктам
-          </Button>
-        </Link>
       </div>
 
       {error && (

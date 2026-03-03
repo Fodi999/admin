@@ -22,18 +22,23 @@ export interface Product {
 }
 
 export interface CreateProductRequest {
-  // Universal input - NEW unified API format
-  name_input?: string;
-  
-  // Optional legacy format fields
+  // Global names required for the catalog (Manual Mode)
   name_en?: string;
   name_pl?: string;
   name_uk?: string;
   name_ru?: string;
+  
+  // Magical Input (AI-First Mode)
+  name_input?: string;
+  
   category_id?: string;
-  unit?: "gram" | "kilogram" | "liter" | "milliliter" | "piece" | "bunch" | "can" | "bottle" | "package";
+  unit?: string;
   description?: string;
-  image_url?: string; // Added for image support
+  image_url?: string;
+  
+  // Seasonal and allergens (optional)
+  is_seasonal?: boolean;
+  allergens?: string[];
 }
 
 export interface Category {
@@ -82,62 +87,51 @@ export async function login(email: string, password: string): Promise<LoginRespo
   return res.json();
 }
 
+export async function verifyToken(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/admin/auth/verify`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // Products
 export async function getProducts(token: string): Promise<Product[]> {
-  const res = await fetch(`${API_URL}/api/admin/products`, {
+  const res = await fetch(`${API_URL}/api/admin/catalog/products`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
   
   if (!res.ok) throw new Error("Failed to fetch products");
-  return res.json();
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data.products || []);
 }
 
 export async function getProduct(id: string, token: string): Promise<Product> {
-  const res = await fetch(`${API_URL}/api/admin/products/${id}`, {
+  const res = await fetch(`${API_URL}/api/admin/catalog/products/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
   
   if (!res.ok) throw new Error("Failed to fetch product");
-  return res.json();
+  const data = await res.json();
+  return data.product || data;
 }
 
 export async function createProduct(
   token: string,
   data: CreateProductRequest
 ): Promise<Product> {
-  // Support both new unified format and legacy format
-  let cleanData: any = {};
-  
-  if (data.name_input) {
-    // New unified API format
-    cleanData = {
-      name_input: data.name_input,
-      description: data.description && data.description.trim() ? data.description : null,
-      image_url: data.image_url || null,
-    };
-  } else {
-    // Legacy format (for backward compatibility)
-    cleanData = {
-      name_en: data.name_en,
-      category_id: data.category_id,
-      unit: data.unit,
-      name_pl: data.name_pl && data.name_pl.trim() ? data.name_pl : null,
-      name_uk: data.name_uk && data.name_uk.trim() ? data.name_uk : null,
-      name_ru: data.name_ru && data.name_ru.trim() ? data.name_ru : null,
-      description: data.description && data.description.trim() ? data.description : null,
-      image_url: data.image_url || null,
-    };
-  }
-
-  const res = await fetch(`${API_URL}/api/admin/products`, {
+  const res = await fetch(`${API_URL}/api/admin/catalog/products`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(cleanData),
+    body: JSON.stringify(data),
   });
   
   if (!res.ok) {
@@ -152,8 +146,8 @@ export async function updateProduct(
   id: string,
   data: Partial<CreateProductRequest>
 ): Promise<Product> {
-  const res = await fetch(`${API_URL}/api/admin/products/${id}`, {
-    method: "PUT",
+  const res = await fetch(`${API_URL}/api/admin/catalog/products/${id}`, {
+    method: "PATCH",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
@@ -166,7 +160,7 @@ export async function updateProduct(
 }
 
 export async function deleteProduct(token: string, id: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/admin/products/${id}`, {
+  const res = await fetch(`${API_URL}/api/admin/catalog/products/${id}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -177,43 +171,72 @@ export async function deleteProduct(token: string, id: string): Promise<void> {
 export async function uploadProductImage(
   token: string,
   productId: string,
-  file: File
+  file: File | Blob
 ): Promise<{ image_url: string }> {
-  console.log("🔍 Upload Image Debug:");
-  console.log("  File name:", file.name);
-  console.log("  File size:", file.size, "bytes", `(${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-  console.log("  File type:", file.type);
-  console.log("  Product ID:", productId);
-  console.log("  Token:", token.substring(0, 20) + "...");
-  
-  const formData = new FormData();
-  formData.append("image", file);  // Backend expects 'image' field (confirmed by curl test)
-  
-  console.log("  FormData keys:", Array.from(formData.keys()));
-  console.log("  URL:", `${API_URL}/api/admin/products/${productId}/image`);
-  
-  const res = await fetch(`${API_URL}/api/admin/products/${productId}/image`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-  
-  console.log("  Response status:", res.status, res.statusText);
-  console.log("  Response headers:", Object.fromEntries(res.headers.entries()));
-  
-  if (!res.ok) {
-    const error = await res.text();
-    console.error("❌ Upload failed:", error);
-    throw new Error(`Failed to upload image: ${error}`);
+  try {
+    // 1. Get presigned URL
+    // Ensure we have a filename even if it's a blob
+    const fileName = (file as File).name || `image-${Date.now()}.jpg`;
+    const fileType = file.type || "image/jpeg";
+
+    console.log("🔍 Getting presigned URL for:", { fileName, fileType });
+    const data = await getProductImagePresignedUrl(
+      token,
+      productId,
+      fileName,
+      fileType
+    );
+
+    const { upload_url, public_url } = data;
+
+    if (!upload_url) {
+      console.error("❌ Backend response missing upload_url:", data);
+      throw new Error("Invalid response from server: upload_url is missing");
+    }
+
+    // 2. Upload directly to storage (R2) from front
+    console.log("🎨 Uploading to R2 storage...", { 
+      originalType: fileType, 
+      size: `${(file.size / 1024).toFixed(2)} KB`
+    });
+
+    // Smart Content-Type detection from Presigned URL
+    // If signature expects webp (common for optimized backends), we must match it
+    let effectiveContentType = fileType;
+    if (upload_url.includes(".webp")) effectiveContentType = "image/webp";
+    else if (upload_url.includes(".png")) effectiveContentType = "image/png";
+    else if (upload_url.includes(".jpg") || upload_url.includes(".jpeg")) effectiveContentType = "image/jpeg";
+    
+    console.log("📝 Using Content-Type for signature:", effectiveContentType);
+    
+    const uploadRes = await fetch(upload_url, {
+      method: "PUT",
+      body: file,
+      headers: {
+        "Content-Type": effectiveContentType,
+      },
+      mode: "cors"
+    });
+
+    if (!uploadRes.ok) {
+      const errorText = await uploadRes.text().catch(() => "Could not read error body");
+      console.error("❌ R2 Upload failed:", uploadRes.status, errorText);
+      throw new Error(`Storage upload failed with status ${uploadRes.status}`);
+    }
+
+    // 3. Save URL to backend
+    console.log("🔗 Saving image URL to backend:", public_url);
+    await updateProduct(token, productId, { image_url: public_url });
+
+    return { image_url: public_url };
+  } catch (error) {
+    console.error("❌ Professional upload flow failed:", error);
+    throw error;
   }
-  
-  const result = await res.json();
-  console.log("✅ Upload success:", result);
-  return result;
 }
 
 export async function deleteProductImage(token: string, productId: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/admin/products/${productId}/image`, {
+  const res = await fetch(`${API_URL}/api/admin/catalog/products/${productId}/image`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -221,9 +244,23 @@ export async function deleteProductImage(token: string, productId: string): Prom
   if (!res.ok) throw new Error("Failed to delete image");
 }
 
+export async function getProductImagePresignedUrl(
+  token: string,
+  productId: string,
+  fileName: string,
+  fileType: string
+): Promise<{ upload_url: string; public_url: string }> {
+  const res = await fetch(`${API_URL}/api/admin/catalog/products/${productId}/image-url?filename=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(fileType)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  
+  if (!res.ok) throw new Error("Failed to get presigned URL");
+  return res.json();
+}
+
 // Categories
 export async function getCategories(token: string): Promise<Category[]> {
-  const res = await fetch(`${API_URL}/api/admin/categories`, {
+  const res = await fetch(`${API_URL}/api/admin/catalog/categories`, {
     headers: { 
       "Authorization": `Bearer ${token}`
     },
@@ -231,8 +268,48 @@ export async function getCategories(token: string): Promise<Category[]> {
   });
   
   if (!res.ok) throw new Error("Failed to fetch categories");
-  const data: CategoriesResponse = await res.json();
-  return data.categories.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const data = await res.json();
+  const list = Array.isArray(data) ? data : (data.categories || []);
+  return list.sort((a: Category, b: Category) => (a.sort_order || 0) - (b.sort_order || 0));
+}
+
+export async function createCategory(token: string, category: Partial<Category>): Promise<Category> {
+  const res = await fetch(`${API_URL}/api/admin/catalog/categories`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(category),
+  });
+
+  if (!res.ok) throw new Error("Failed to create category");
+  return res.json();
+}
+
+export async function updateCategory(token: string, id: string, category: Partial<Category>): Promise<Category> {
+  const res = await fetch(`${API_URL}/api/admin/catalog/categories/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(category),
+  });
+
+  if (!res.ok) throw new Error("Failed to update category");
+  return res.json();
+}
+
+export async function deleteCategory(token: string, id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/admin/catalog/categories/${id}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) throw new Error("Failed to delete category");
 }
 
 // Users
@@ -253,7 +330,14 @@ export async function getUsers(token: string): Promise<UsersListResponse> {
   });
   
   if (!res.ok) throw new Error("Failed to fetch users");
-  return res.json();
+  const data = await res.json();
+  if (Array.isArray(data)) {
+    return { users: data, total: data.length };
+  }
+  return {
+    users: data.users || [],
+    total: data.total || (data.users?.length || 0)
+  };
 }
 
 export async function deleteUser(token: string, userId: string): Promise<void> {

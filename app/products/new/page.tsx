@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import imageCompression from "browser-image-compression";
-import { createProduct, uploadProductImage, type CreateProductRequest, type Product } from "@/lib/api";
+import { createProduct, uploadProductImage, getCategories, type CreateProductRequest, type Product, type Category } from "@/lib/api";
 import { getToken, clearToken } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,28 +11,54 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, AlertTriangle, Lightbulb, CheckCircle2, Upload, X } from "lucide-react";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
+import { Loader2, AlertTriangle, Lightbulb, CheckCircle2, Upload, X, Globe } from "lucide-react";
 
 export default function NewProductPage() {
   const [loading, setLoading] = useState(false);
+  const [isAiMode, setIsAiMode] = useState(true);
+  const [nameInput, setNameInput] = useState("");
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
   const router = useRouter();
 
-  const [formData, setFormData] = useState({
-    name_input: "",
+  const [formData, setFormData] = useState<CreateProductRequest>({
+    name_en: "",
+    name_pl: "",
+    name_uk: "",
+    name_ru: "",
+    category_id: "",
+    unit: "кг",
     description: "",
   });
 
-  const [advancedMode, setAdvancedMode] = useState(false);
-
   useEffect(() => {
-    // Categories are no longer needed in simple mode
+    async function loadCategories() {
+      const token = getToken();
+      if (!token) return;
+      try {
+        const data = await getCategories(token);
+        setCategories(data);
+        if (data.length > 0 && !formData.category_id) {
+          setFormData(prev => ({ ...prev, category_id: data[0].id }));
+        }
+      } catch (err) {
+        console.error("Failed to load categories:", err);
+      }
+    }
+    loadCategories();
   }, []);
-
+  
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -89,9 +115,20 @@ export default function NewProductPage() {
     }
 
     // Validate required fields
-    if (!formData.name_input?.trim()) {
-      setError("Введите название продукта");
-      return;
+    if (isAiMode) {
+      if (!nameInput.trim()) {
+        setError("Введите название продукта для AI");
+        return;
+      }
+    } else {
+      if (!formData.name_en?.trim() || !formData.name_pl?.trim() || !formData.name_uk?.trim() || !formData.name_ru?.trim()) {
+        setError("Введите названия на всех 4 языках");
+        return;
+      }
+      if (!formData.category_id) {
+        setError("Выберите категорию");
+        return;
+      }
     }
 
     setLoading(true);
@@ -100,12 +137,13 @@ export default function NewProductPage() {
 
     try {
       // 1️⃣ Создаем продукт БЕЗ изображения
-      console.log("📝 Создаю продукт...");
-      const product: Product = await createProduct(token, {
-        name_input: formData.name_input,
-        description: formData.description || "",
-        // Не передаем image_url - загружаем после создания
-      } as any);
+      console.log(isAiMode ? "🪄 Создаю продукт через AI..." : "📝 Создаю продукт...");
+      
+      const requestData = isAiMode 
+        ? { name_input: nameInput } 
+        : formData;
+
+      const product = await createProduct(token, requestData);
       
       console.log("✅ Продукт создан:", product.id);
 
@@ -173,47 +211,202 @@ export default function NewProductPage() {
       </Alert>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Информация о продукте</CardTitle>
-            <CardDescription>
-              Введите название и описание
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Universal Name Input */}
-            <div className="space-y-2">
-              <Label htmlFor="name_input" className="flex items-center gap-2">
-                Название продукта <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="name_input"
-                type="text"
-                value={formData.name_input}
-                onChange={(e) => setFormData({ ...formData, name_input: e.target.value })}
-                required
-                disabled={loading}
-                placeholder="Например: Молоко, Помидоры, Fresh Milk"
-              />
-              <p className="text-xs text-muted-foreground">
-                Можно ввести на любом языке (русский, английский, польский, украинский)
-              </p>
+        {isAiMode ? (
+          <Card className="border-primary/50 shadow-sm relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-3">
+              <div className="flex space-x-2">
+                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse delay-75" />
+                <div className="w-2 h-2 rounded-full bg-pink-500 animate-pulse delay-150" />
+              </div>
             </div>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-xl flex items-center gap-2">
+                <Globe className="h-5 w-5 text-primary" />
+                Магическое AI-Создание
+              </CardTitle>
+              <CardDescription>
+                Просто введите название продукта, и система сделает всё за вас
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="ai_name" className="text-sm font-medium">
+                  Название продукта (Любой язык)
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="ai_name"
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    placeholder="Например: Свежее молоко 3.2% 1л"
+                    className="text-lg py-6 pr-10 border-2 border-primary/20 focus-visible:border-primary/50"
+                    autoFocus
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors">
+                    <CheckCircle2 className="h-5 w-5 opacity-50" />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  AI автоматически переведет на 4 языка, выберет категорию "Молочные" и единицу "Литр"
+                </p>
+              </div>
 
-            {/* Description */}
-            <div className="space-y-2">
-              <Label htmlFor="description">Описание (необязательно)</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                disabled={loading}
-                placeholder="Дополнительная информация о продукте"
-                rows={4}
-              />
-            </div>
-          </CardContent>
-        </Card>
+              <div className="pt-2">
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setIsAiMode(false)}
+                  className="text-xs text-muted-foreground hover:text-primary p-0 h-auto"
+                >
+                  Хотите полного контроля? Переключитесь в режим ручного заполнения →
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader className="pb-4">
+              <CardTitle className="flex justify-between items-center">
+                <span>Ручное заполнение</span>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setIsAiMode(true)}
+                  className="gap-2 text-xs"
+                >
+                  <Globe className="h-3 w-3" /> Вернуться к AI
+                </Button>
+              </CardTitle>
+              <CardDescription>
+                Введите все названия и детали продукта вручную
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Multi-language Name Inputs */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name_en" className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-1 bg-blue-100 text-blue-700 rounded">EN</span>
+                    Название (English) <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="name_en"
+                    value={formData.name_en}
+                    onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
+                    required
+                    disabled={loading}
+                    placeholder="Milk"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="name_pl" className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-1 bg-red-100 text-red-700 rounded">PL</span>
+                    Nazwa (Polski) <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="name_pl"
+                    value={formData.name_pl}
+                    onChange={(e) => setFormData({ ...formData, name_pl: e.target.value })}
+                    required
+                    disabled={loading}
+                    placeholder="Mleko"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="name_uk" className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-1 bg-yellow-100 text-yellow-700 rounded">UK</span>
+                    Назва (Українська) <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="name_uk"
+                    value={formData.name_uk}
+                    onChange={(e) => setFormData({ ...formData, name_uk: e.target.value })}
+                    required
+                    disabled={loading}
+                    placeholder="Молоко"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="name_ru" className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-1 bg-gray-100 text-gray-700 rounded">RU</span>
+                    Название (Русский) <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="name_ru"
+                    value={formData.name_ru}
+                    onChange={(e) => setFormData({ ...formData, name_ru: e.target.value })}
+                    required
+                    disabled={loading}
+                    placeholder="Молоко"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Category */}
+                <div className="space-y-2">
+                  <Label htmlFor="category">Категория <span className="text-destructive">*</span></Label>
+                  <Select
+                    value={formData.category_id}
+                    onValueChange={(value) => setFormData({ ...formData, category_id: value })}
+                    disabled={loading || categories.length === 0}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите категорию" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name_ru || cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Unit */}
+                <div className="space-y-2">
+                  <Label htmlFor="unit">Единица измерения <span className="text-destructive">*</span></Label>
+                  <Select
+                    value={formData.unit}
+                    onValueChange={(value) => setFormData({ ...formData, unit: value })}
+                    disabled={loading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите ед. изм." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="кг">кг (Килограмм)</SelectItem>
+                      <SelectItem value="л">л (Литр)</SelectItem>
+                      <SelectItem value="шт">шт (Штука)</SelectItem>
+                      <SelectItem value="уп">уп (Упаковка)</SelectItem>
+                      <SelectItem value="г">г (Грамм)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <Label htmlFor="description">Описание (необязательно)</Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  disabled={loading}
+                  placeholder="Дополнительная информация о продукте"
+                  rows={3}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Image Upload Card */}
         <Card>

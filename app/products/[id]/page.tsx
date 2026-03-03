@@ -2,8 +2,9 @@
 
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import imageCompression from "browser-image-compression";
-import { getProduct, updateProduct, uploadProductImage, deleteProductImage, type Product, type CreateProductRequest } from "@/lib/api";
+import { getProduct, updateProduct, uploadProductImage, deleteProductImage, getCategories, type Product, type CreateProductRequest, type Category } from "@/lib/api";
 import { getToken, clearToken } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -20,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Camera, Loader2, ArrowLeft, Upload, Trash2, Save } from "lucide-react";
+import { Camera, Loader2, ArrowLeft, Upload, Trash2, Save, Globe } from "lucide-react";
 
 // Перевод единиц измерения на русский
 const UNIT_TRANSLATIONS: Record<string, string> = {
@@ -43,6 +51,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   const resolvedParams = use(params);
   const [product, setProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState<Partial<CreateProductRequest>>({});
+  const [categories, setCategories] = useState<Category[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -55,7 +64,19 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
 
   useEffect(() => {
     loadProduct();
+    loadCategories();
   }, []);
+
+  async function loadCategories() {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const data = await getCategories(token);
+      setCategories(data);
+    } catch (err) {
+      console.error("Failed to load categories:", err);
+    }
+  }
 
   async function loadProduct() {
     const token = getToken();
@@ -73,7 +94,10 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         name_pl: data.name_pl || "",
         name_uk: data.name_uk || "",
         name_ru: data.name_ru || "",
+        category_id: data.category_id,
+        unit: data.unit,
         description: data.description || "",
+        image_url: data.image_url || "",
       });
     } catch (err) {
       if (err instanceof Error && err.message.includes("401")) {
@@ -123,7 +147,9 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       const result = await uploadProductImage(token, resolvedParams.id, compressedFile);
       console.log("✅ Upload completed successfully:", result);
       
-      setProduct(prev => prev ? { ...prev, image_url: result.image_url } : null);
+      const updatedUrl = result.image_url;
+      setProduct(prev => prev ? { ...prev, image_url: updatedUrl } : null);
+      setFormData(prev => ({ ...prev, image_url: updatedUrl }));
       setFile(null);
     } catch (err) {
       console.error("❌ Upload error:", err);
@@ -253,10 +279,13 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
               {product.image_url ? (
                 <div className="flex-1 flex flex-col gap-4">
                   <div className="relative flex-1 rounded-lg overflow-hidden border bg-muted">
-                    <img
+                    <Image
                       src={product.image_url}
                       alt={product.name_ru || product.name_en}
-                      className="w-full h-full object-cover"
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 100vw, 50vw"
+                      priority
                     />
                   </div>
                   <div className="space-y-3">
@@ -359,70 +388,110 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
             <CardContent className="flex-1 overflow-y-auto">
               {editMode ? (
                 <div className="space-y-4">
-                  {/* English Name */}
-                  <div className="space-y-2">
-                    <Label htmlFor="name_en" className="text-sm font-medium">English Name *</Label>
-                    <Input
-                      id="name_en"
-                      value={formData.name_en || ""}
-                      onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                      disabled={saving}
-                      placeholder="Product name in English"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Оригинал: {product?.name_en}
-                    </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* English Name */}
+                    <div className="space-y-2">
+                      <Label htmlFor="name_en" className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold px-1 bg-blue-100 text-blue-700 rounded">EN</span>
+                        English Name *
+                      </Label>
+                      <Input
+                        id="name_en"
+                        value={formData.name_en || ""}
+                        onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
+                        disabled={saving}
+                        placeholder="Product name in English"
+                      />
+                    </div>
+
+                    {/* Polish Name */}
+                    <div className="space-y-2">
+                      <Label htmlFor="name_pl" className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold px-1 bg-red-100 text-red-700 rounded">PL</span>
+                        Polski Name *
+                      </Label>
+                      <Input
+                        id="name_pl"
+                        value={formData.name_pl || ""}
+                        onChange={(e) => setFormData({ ...formData, name_pl: e.target.value })}
+                        disabled={saving}
+                        placeholder="Nazwa po polsku"
+                      />
+                    </div>
+
+                    {/* Ukrainian Name */}
+                    <div className="space-y-2">
+                      <Label htmlFor="name_uk" className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold px-1 bg-yellow-100 text-yellow-700 rounded">UK</span>
+                        Українська назва *
+                      </Label>
+                      <Input
+                        id="name_uk"
+                        value={formData.name_uk || ""}
+                        onChange={(e) => setFormData({ ...formData, name_uk: e.target.value })}
+                        disabled={saving}
+                        placeholder="Назва українською"
+                      />
+                    </div>
+
+                    {/* Russian Name */}
+                    <div className="space-y-2">
+                      <Label htmlFor="name_ru" className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold px-1 bg-gray-100 text-gray-700 rounded">RU</span>
+                        Русское название *
+                      </Label>
+                      <Input
+                        id="name_ru"
+                        value={formData.name_ru || ""}
+                        onChange={(e) => setFormData({ ...formData, name_ru: e.target.value })}
+                        disabled={saving}
+                        placeholder="Название на русском"
+                      />
+                    </div>
                   </div>
 
-                  {/* Polish Name */}
-                  <div className="space-y-2">
-                    <Label htmlFor="name_pl" className="text-sm font-medium">
-                      🇵🇱 Polski {formData.name_pl !== product?.name_pl && <span className="text-orange-600">• Изменено</span>}
-                    </Label>
-                    <Input
-                      id="name_pl"
-                      value={formData.name_pl || ""}
-                      onChange={(e) => setFormData({ ...formData, name_pl: e.target.value })}
-                      disabled={saving}
-                      placeholder="Будет переведено автоматически"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Оригинал: {product?.name_pl}
-                    </p>
-                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Category */}
+                    <div className="space-y-2">
+                      <Label>Категория *</Label>
+                      <Select
+                        value={formData.category_id}
+                        onValueChange={(value) => setFormData({ ...formData, category_id: value })}
+                        disabled={saving || categories.length === 0}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Выберите категорию" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>
+                              {cat.name_ru || cat.name_en || cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                  {/* Ukrainian Name */}
-                  <div className="space-y-2">
-                    <Label htmlFor="name_uk" className="text-sm font-medium">
-                      🇺🇦 Українська {formData.name_uk !== product?.name_uk && <span className="text-orange-600">• Изменено</span>}
-                    </Label>
-                    <Input
-                      id="name_uk"
-                      value={formData.name_uk || ""}
-                      onChange={(e) => setFormData({ ...formData, name_uk: e.target.value })}
-                      disabled={saving}
-                      placeholder="Будет переведено автоматически"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Оригинал: {product?.name_uk}
-                    </p>
-                  </div>
-
-                  {/* Russian Name */}
-                  <div className="space-y-2">
-                    <Label htmlFor="name_ru" className="text-sm font-medium">
-                      🇷🇺 Русский {formData.name_ru !== product?.name_ru && <span className="text-orange-600">• Изменено</span>}
-                    </Label>
-                    <Input
-                      id="name_ru"
-                      value={formData.name_ru || ""}
-                      onChange={(e) => setFormData({ ...formData, name_ru: e.target.value })}
-                      disabled={saving}
-                      placeholder="Будет переведено автоматически"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Оригинал: {product?.name_ru}
-                    </p>
+                    {/* Unit */}
+                    <div className="space-y-2">
+                      <Label>Единица измерения *</Label>
+                      <Select
+                        value={formData.unit}
+                        onValueChange={(value) => setFormData({ ...formData, unit: value })}
+                        disabled={saving}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Выберите ед. изм." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="кг">кг (Килограмм)</SelectItem>
+                          <SelectItem value="л">л (Литр)</SelectItem>
+                          <SelectItem value="шт">шт (Штука)</SelectItem>
+                          <SelectItem value="уп">уп (Упаковка)</SelectItem>
+                          <SelectItem value="г">г (Грамм)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
                   {/* Description */}
@@ -440,48 +509,52 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-[120px_1fr] items-center gap-2">
-                    <span className="font-semibold">English:</span>
-                    <span>{product?.name_en}</span>
-                  </div>
-                  
-                  {product?.name_pl && (
-                    <div className="grid grid-cols-[120px_1fr] items-center gap-2">
-                      <span className="font-semibold">Polski:</span>
-                      <span>{product.name_pl}</span>
+                  {/* View Mode Layout */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b pb-4">
+                    <div>
+                      <span className="text-xs font-semibold text-muted-foreground block mb-1">ENGLISH</span>
+                      <p className="font-medium">{product?.name_en}</p>
                     </div>
-                  )}
-                  
-                  {product?.name_uk && (
-                    <div className="grid grid-cols-[120px_1fr] items-center gap-2">
-                      <span className="font-semibold">Українська:</span>
-                      <span>{product.name_uk}</span>
+                    <div>
+                      <span className="text-xs font-semibold text-muted-foreground block mb-1">POLSKI</span>
+                      <p className="font-medium">{product?.name_pl || "—"}</p>
                     </div>
-                  )}
-                  
-                  {product?.name_ru && (
-                    <div className="grid grid-cols-[120px_1fr] items-center gap-2">
-                      <span className="font-semibold">Русский:</span>
-                      <span>{product.name_ru}</span>
+                    <div>
+                      <span className="text-xs font-semibold text-muted-foreground block mb-1">УКРАЇНСЬКА</span>
+                      <p className="font-medium">{product?.name_uk || "—"}</p>
                     </div>
-                  )}
-
-                  <div className="grid grid-cols-[120px_1fr] items-center gap-2">
-                    <span className="font-semibold">Единица:</span>
-                    <Badge variant="secondary">{translateUnit(product?.unit || "")}</Badge>
+                    <div>
+                      <span className="text-xs font-semibold text-muted-foreground block mb-1">РУССКИЙ</span>
+                      <p className="font-medium">{product?.name_ru || "—"}</p>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-[120px_1fr] items-center gap-2">
-                    <span className="font-semibold">ID категории:</span>
-                    <code className="text-xs bg-muted px-2 py-1 rounded">{product?.category_id}</code>
+                  <div className="grid grid-cols-2 gap-4 border-b pb-4">
+                    <div>
+                      <span className="text-xs font-semibold text-muted-foreground block mb-1">КАТЕГОРИЯ</span>
+                      <p className="font-medium">
+                        {categories.find(c => c.id === product?.category_id)?.name_ru || product?.category_id}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-muted-foreground block mb-1">ЕДИНИЦА</span>
+                      <Badge variant="secondary" className="mt-1">
+                        {product?.unit}
+                      </Badge>
+                    </div>
                   </div>
 
                   {product?.description && (
-                    <div className="grid grid-cols-[120px_1fr] items-start gap-2">
-                      <span className="font-semibold">Описание:</span>
-                      <span className="text-muted-foreground">{product.description}</span>
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground block">ОПИСАНИЕ</span>
+                      <p className="text-sm text-muted-foreground">{product.description}</p>
                     </div>
                   )}
+
+                  <div className="pt-2">
+                    <span className="text-[10px] text-muted-foreground uppercase">ID продукта:</span>
+                    <p className="text-[10px] font-mono select-all">{product?.id}</p>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -502,6 +575,8 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                           name_pl: product.name_pl || "",
                           name_uk: product.name_uk || "",
                           name_ru: product.name_ru || "",
+                          category_id: product.category_id,
+                          unit: product.unit,
                           description: product.description || "",
                         });
                       }
