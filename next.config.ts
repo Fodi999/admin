@@ -18,6 +18,11 @@ const nextConfig: NextConfig = {
         hostname: "pub-85f883ab.r2.dev",
         pathname: "/**",
       },
+      {
+        protocol: "https",
+        hostname: "cdn.dima-fomin.pl",
+        pathname: "/**",
+      },
     ],
   },
 };

@@ -9,6 +9,8 @@ import {
   Tags,
   Users, 
   Settings,
+  ChefHat,
+  FileText,
   Menu,
   X 
 } from "lucide-react";
@@ -26,6 +28,16 @@ const routes = [
     label: "Catalog",
     icon: Package,
     href: "/products",
+  },
+  {
+    label: "О шефе",
+    icon: ChefHat,
+    href: "/about",
+  },
+  {
+    label: "Статьи",
+    icon: FileText,
+    href: "/articles",
   },
   {
     label: "Categories",

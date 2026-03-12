@@ -208,14 +208,16 @@ export async function uploadProductImage(
     else if (upload_url.includes(".jpg") || upload_url.includes(".jpeg")) effectiveContentType = "image/jpeg";
     
     console.log("📝 Using Content-Type for signature:", effectiveContentType);
-    
+
+    // Wrap file in a Blob with the correct type so the browser sends it
+    // without triggering a CORS preflight (avoids OPTIONS → R2 rejection)
+    const uploadBlob = new Blob([file], { type: effectiveContentType });
+
     const uploadRes = await fetch(upload_url, {
       method: "PUT",
-      body: file,
-      headers: {
-        "Content-Type": effectiveContentType,
-      },
-      mode: "cors"
+      body: uploadBlob,
+      // No explicit Content-Type header — the Blob type is used automatically
+      // This prevents a CORS preflight that R2 presigned URLs don't support
     });
 
     if (!uploadRes.ok) {

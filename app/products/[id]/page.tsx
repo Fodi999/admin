@@ -1,208 +1,167 @@
-"use client";
+'use client';
 
-import { useState, useEffect, use } from "react";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
-import imageCompression from "browser-image-compression";
-import { getProduct, updateProduct, uploadProductImage, deleteProductImage, getCategories, type Product, type CreateProductRequest, type Category } from "@/lib/api";
-import { getToken, clearToken } from "@/lib/auth";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { useEffect, useState, use } from 'react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import imageCompression from 'browser-image-compression';
+import {
+  getProduct,
+  updateProduct,
+  uploadProductImage,
+  getCategories,
+  type Product,
+  type Category,
+  type UpdateProductRequest,
+} from '@/lib/admin-api';
+import { getToken, clearToken } from '@/lib/auth';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Camera, Loader2, ArrowLeft, Upload, Trash2, Save, Globe } from "lucide-react";
+} from '@/components/ui/select';
+import { Camera, Loader2, ArrowLeft, Upload, Save, Sparkles } from 'lucide-react';
 
-// Перевод единиц измерения на русский
-const UNIT_TRANSLATIONS: Record<string, string> = {
-  "gram": "грамм",
-  "kilogram": "килограмм",
-  "liter": "литр",
-  "milliliter": "миллилитр",
-  "piece": "штука",
-  "bunch": "пучок",
-  "can": "банка",
-  "bottle": "бутылка",
-  "package": "упаковка"
+const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter', 'AllYear'];
+
+const ALLERGENS = [
+  'Milk', 'Eggs', 'Fish', 'Shellfish', 'TreeNuts', 'Peanuts',
+  'Wheat', 'Soybeans', 'Sesame', 'Celery', 'Mustard', 'Sulfites', 'Lupin', 'Molluscs',
+];
+
+const UNITS = [
+  'gram', 'kilogram', 'liter', 'milliliter',
+  'piece', 'bunch', 'can', 'bottle', 'package',
+];
+
+const SEASON_ICONS: Record<string, string> = {
+  Spring: '🌸', Summer: '☀️', Autumn: '🍂', Winter: '❄️', AllYear: '🔄',
 };
 
-function translateUnit(englishUnit: string): string {
-  return UNIT_TRANSLATIONS[englishUnit] || englishUnit;
-}
-
 export default function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const [product, setProduct] = useState<Product | null>(null);
-  const [formData, setFormData] = useState<Partial<CreateProductRequest>>({});
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [editMode, setEditMode] = useState(false);
+  const { id } = use(params);
   const router = useRouter();
 
+  const [product, setProduct] = useState<Product | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [form, setForm] = useState<UpdateProductRequest>({});
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
   useEffect(() => {
-    loadProduct();
-    loadCategories();
-  }, []);
-
-  async function loadCategories() {
     const token = getToken();
-    if (!token) return;
-    try {
-      const data = await getCategories(token);
-      setCategories(data);
-    } catch (err) {
-      console.error("Failed to load categories:", err);
-    }
+    if (!token) { router.push('/login'); return; }
+    Promise.all([getProduct(token, id), getCategories(token)])
+      .then(([p, cats]) => {
+        setProduct(p);
+        setCategories(cats);
+        resetForm(p);
+      })
+      .catch((err) => {
+        if (err instanceof Error && err.message.includes('401')) {
+          clearToken(); router.push('/login');
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  function resetForm(p: Product) {
+    setForm({
+      name_en: p.name_en,
+      name_ru: p.name_ru ?? '',
+      name_pl: p.name_pl ?? '',
+      name_uk: p.name_uk ?? '',
+      category_id: p.category_id,
+      unit: p.unit,
+      description_en: p.description_en ?? '',
+      description_ru: p.description_ru ?? '',
+      description_pl: p.description_pl ?? '',
+      description_uk: p.description_uk ?? '',
+      calories_per_100g: p.calories_per_100g ?? undefined,
+      protein_per_100g: p.protein_per_100g ? parseFloat(p.protein_per_100g) : undefined,
+      fat_per_100g: p.fat_per_100g ? parseFloat(p.fat_per_100g) : undefined,
+      carbs_per_100g: p.carbs_per_100g ? parseFloat(p.carbs_per_100g) : undefined,
+      density_g_per_ml: p.density_g_per_ml ? parseFloat(p.density_g_per_ml) : undefined,
+      seasons: p.seasons ?? [],
+      allergens: p.allergens ?? [],
+    });
   }
 
-  async function loadProduct() {
-    const token = getToken();
-    
-    if (!token) {
-      router.push("/login");
-      return;
-    }
+  function set<K extends keyof UpdateProductRequest>(key: K, value: UpdateProductRequest[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
 
+  function toggleArray(key: 'seasons' | 'allergens', value: string) {
+    const arr = (form[key] ?? []) as string[];
+    set(key, arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value]);
+  }
+
+  async function handleSave() {
+    const token = getToken();
+    if (!token) { router.push('/login'); return; }
+    setSaving(true);
+    setMessage(null);
     try {
-      const data = await getProduct(resolvedParams.id, token);
-      setProduct(data);
-      setFormData({
-        name_en: data.name_en,
-        name_pl: data.name_pl || "",
-        name_uk: data.name_uk || "",
-        name_ru: data.name_ru || "",
-        category_id: data.category_id,
-        unit: data.unit,
-        description: data.description || "",
-        image_url: data.image_url || "",
-      });
+      const updated = await updateProduct(token, id, form);
+      setProduct(updated);
+      resetForm(updated);
+      setMessage({ type: 'ok', text: '✅ Сохранено!' });
     } catch (err) {
-      if (err instanceof Error && err.message.includes("401")) {
-        clearToken();
-        router.push("/login");
-      } else {
-        setError(err instanceof Error ? err.message : "Failed to load product");
-      }
+      setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
-  async function handleUpload() {
-    if (!file) {
-      return;
-    }
-
-    console.log("📤 Starting image upload with compression...");
-    console.log(`📦 Original file: ${file.name}, ${(file.size / 1024 / 1024).toFixed(2)} MB, ${file.type}`);
-
+  async function handleSaveWithAutoTranslate() {
     const token = getToken();
-    if (!token) {
-      console.error("❌ No token found");
-      router.push("/login");
-      return;
+    if (!token) { router.push('/login'); return; }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const updated = await updateProduct(token, id, { ...form, auto_translate: true });
+      setProduct(updated);
+      resetForm(updated);
+      setMessage({ type: 'ok', text: '✅ Сохранено + автоперевод применён!' });
+    } catch (err) {
+      setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
+    } finally {
+      setSaving(false);
     }
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const token = getToken();
+    if (!token) { router.push('/login'); return; }
 
     setUploading(true);
-    setError("");
-
+    setMessage(null);
     try {
-      // Настройки компрессии
-      const options = {
+      const compressed = await imageCompression(file, {
         maxSizeMB: 1,
         maxWidthOrHeight: 1200,
         useWebWorker: true,
-        fileType: 'image/jpeg'
-      };
-
-      // Компрессия
-      console.log("🎨 Compressing image...");
-      const compressedFile = await imageCompression(file, options);
-      console.log(`✅ Compressed: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
-
-      // Загрузка
-      const result = await uploadProductImage(token, resolvedParams.id, compressedFile);
-      console.log("✅ Upload completed successfully:", result);
-      
-      const updatedUrl = result.image_url;
-      setProduct(prev => prev ? { ...prev, image_url: updatedUrl } : null);
-      setFormData(prev => ({ ...prev, image_url: updatedUrl }));
-      setFile(null);
+        fileType: 'image/jpeg',
+      });
+      const imageUrl = await uploadProductImage(token, id, compressed as File);
+      setProduct((prev) => prev ? { ...prev, image_url: imageUrl } : prev);
+      setMessage({ type: 'ok', text: '✅ Фото загружено!' });
     } catch (err) {
-      console.error("❌ Upload error:", err);
-      if (err instanceof Error && err.message.includes("401")) {
-        clearToken();
-        router.push("/login");
-      } else {
-        setError(err instanceof Error ? err.message : "Upload failed");
-      }
+      setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка загрузки'}` });
     } finally {
       setUploading(false);
-    }
-  }
-
-  async function handleDeleteImage() {
-    const token = getToken();
-    if (!token) return;
-
-    try {
-      await deleteProductImage(token, resolvedParams.id);
-      setProduct(prev => prev ? { ...prev, image_url: undefined } : null);
-      setDeleteDialogOpen(false);
-      setSuccessMessage("Изображение удалено успешно");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete image");
-    }
-  }
-
-  async function handleSaveChanges() {
-    const token = getToken();
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-
-    setSaving(true);
-    setError("");
-    setSuccessMessage("");
-
-    try {
-      const updatedProduct = await updateProduct(token, resolvedParams.id, formData);
-      setProduct(updatedProduct);
-      setEditMode(false);
-      setSuccessMessage("Продукт успешно обновлен");
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("401")) {
-        clearToken();
-        router.push("/login");
-      } else {
-        setError(err instanceof Error ? err.message : "Failed to update product");
-      }
-    } finally {
-      setSaving(false);
+      e.target.value = '';
     }
   }
 
@@ -211,7 +170,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Загрузка...</p>
+          <p className="text-muted-foreground">Загрузка продукта...</p>
         </div>
       </div>
     );
@@ -219,7 +178,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
 
   if (!product) {
     return (
-      <div className="container mx-auto p-6 max-w-2xl">
+      <div className="p-6">
         <Alert variant="destructive">
           <AlertDescription>Продукт не найден</AlertDescription>
         </Alert>
@@ -228,430 +187,309 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="container mx-auto p-6 max-w-7xl flex-1 flex flex-col">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-          <Button
-            variant="link"
-            className="p-0 h-auto font-normal"
-            onClick={() => router.push("/products")}
-          >
-            Продукты
-          </Button>
-          <span>/</span>
-          <span>Редактирование: {product.name_ru || product.name_en}</span>
-        </div>
-
-        {/* Header */}
-        <div className="mb-4">
-          <h1 className="text-3xl font-bold tracking-tight mb-1">
-            {product.name_ru || product.name_en}
+    <div className="max-w-4xl mx-auto space-y-6 pb-12 animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/products')} className="rounded-xl">
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Назад
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold">
+            {product.name_ru || product.name_uk || product.name_pl || product.name_en}
           </h1>
-          <p className="text-muted-foreground text-sm">
-            Редактирование информации о продукте
-          </p>
-        </div>
-
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {successMessage && (
-          <Alert className="mb-4 border-green-500 text-green-700 bg-green-50">
-            <AlertDescription>{successMessage}</AlertDescription>
-          </Alert>
-        )}
-
-        {/* Two Column Layout */}
-        <div className="grid grid-cols-2 gap-6 flex-1 overflow-hidden">
-          {/* LEFT: Image Upload */}
-          <Card className="flex flex-col">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Изображение продукта</CardTitle>
-              <CardDescription>
-                Автоматическое сжатие до &lt;1МБ JPEG
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col">
-              {product.image_url ? (
-                <div className="flex-1 flex flex-col gap-4">
-                  <div className="relative flex-1 rounded-lg overflow-hidden border bg-muted">
-                    <Image
-                      src={product.image_url}
-                      alt={product.name_ru || product.name_en}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 768px) 100vw, 50vw"
-                      priority
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <Input
-                        type="file"
-                        accept="image/jpeg,image/jpg,image/png,image/webp"
-                        onChange={(e) => setFile(e.target.files?.[0] || null)}
-                        disabled={uploading}
-                        className="flex-1"
-                      />
-                      <Button
-                        onClick={handleUpload}
-                        disabled={uploading || !file}
-                      >
-                        {uploading ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Загрузка...
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="mr-2 h-4 w-4" />
-                            Заменить
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                    {file && (
-                      <Alert>
-                        <AlertDescription className="text-xs">
-                          ✓ {file.name} ({(file.size / 1024 / 1024).toFixed(2)} МБ)
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                    <Button 
-                      variant="destructive"
-                      className="w-full"
-                      onClick={() => setDeleteDialogOpen(true)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Удалить изображение
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col gap-4">
-                  <div className="flex-1 border-2 border-dashed rounded-lg flex items-center justify-center text-center">
-                    <div>
-                      <Camera className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                      <p className="text-muted-foreground">Изображение ещё не загружено</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Input
-                      type="file"
-                      accept="image/jpeg,image/jpg,image/png,image/webp"
-                      onChange={(e) => setFile(e.target.files?.[0] || null)}
-                      disabled={uploading}
-                      className="flex-1"
-                    />
-                    <Button
-                      onClick={handleUpload}
-                      disabled={uploading || !file}
-                      size="lg"
-                    >
-                      {uploading ? (
-                        <>
-                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                          Загрузка...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="mr-2 h-5 w-5" />
-                          Загрузить
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  {file && (
-                    <Alert>
-                      <AlertDescription className="text-xs">
-                        ✓ {file.name} ({(file.size / 1024 / 1024).toFixed(2)} МБ)
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* RIGHT: Product Details */}
-          <Card className="flex flex-col overflow-hidden">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Детали продукта</CardTitle>
-              <CardDescription>
-                {editMode ? "Редактирование информации о продукте" : "Информация о продукте"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto">
-              {editMode ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* English Name */}
-                    <div className="space-y-2">
-                      <Label htmlFor="name_en" className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold px-1 bg-blue-100 text-blue-700 rounded">EN</span>
-                        English Name *
-                      </Label>
-                      <Input
-                        id="name_en"
-                        value={formData.name_en || ""}
-                        onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                        disabled={saving}
-                        placeholder="Product name in English"
-                      />
-                    </div>
-
-                    {/* Polish Name */}
-                    <div className="space-y-2">
-                      <Label htmlFor="name_pl" className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold px-1 bg-red-100 text-red-700 rounded">PL</span>
-                        Polski Name *
-                      </Label>
-                      <Input
-                        id="name_pl"
-                        value={formData.name_pl || ""}
-                        onChange={(e) => setFormData({ ...formData, name_pl: e.target.value })}
-                        disabled={saving}
-                        placeholder="Nazwa po polsku"
-                      />
-                    </div>
-
-                    {/* Ukrainian Name */}
-                    <div className="space-y-2">
-                      <Label htmlFor="name_uk" className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold px-1 bg-yellow-100 text-yellow-700 rounded">UK</span>
-                        Українська назва *
-                      </Label>
-                      <Input
-                        id="name_uk"
-                        value={formData.name_uk || ""}
-                        onChange={(e) => setFormData({ ...formData, name_uk: e.target.value })}
-                        disabled={saving}
-                        placeholder="Назва українською"
-                      />
-                    </div>
-
-                    {/* Russian Name */}
-                    <div className="space-y-2">
-                      <Label htmlFor="name_ru" className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold px-1 bg-gray-100 text-gray-700 rounded">RU</span>
-                        Русское название *
-                      </Label>
-                      <Input
-                        id="name_ru"
-                        value={formData.name_ru || ""}
-                        onChange={(e) => setFormData({ ...formData, name_ru: e.target.value })}
-                        disabled={saving}
-                        placeholder="Название на русском"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Category */}
-                    <div className="space-y-2">
-                      <Label>Категория *</Label>
-                      <Select
-                        value={formData.category_id}
-                        onValueChange={(value) => setFormData({ ...formData, category_id: value })}
-                        disabled={saving || categories.length === 0}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Выберите категорию" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>
-                              {cat.name_ru || cat.name_en || cat.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Unit */}
-                    <div className="space-y-2">
-                      <Label>Единица измерения *</Label>
-                      <Select
-                        value={formData.unit}
-                        onValueChange={(value) => setFormData({ ...formData, unit: value })}
-                        disabled={saving}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Выберите ед. изм." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="кг">кг (Килограмм)</SelectItem>
-                          <SelectItem value="л">л (Литр)</SelectItem>
-                          <SelectItem value="шт">шт (Штука)</SelectItem>
-                          <SelectItem value="уп">уп (Упаковка)</SelectItem>
-                          <SelectItem value="г">г (Грамм)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Description */}
-                  <div className="space-y-2">
-                    <Label htmlFor="description" className="text-sm font-medium">Описание</Label>
-                    <Textarea
-                      id="description"
-                      value={formData.description || ""}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      disabled={saving}
-                      placeholder="Описание продукта"
-                      rows={4}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* View Mode Layout */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b pb-4">
-                    <div>
-                      <span className="text-xs font-semibold text-muted-foreground block mb-1">ENGLISH</span>
-                      <p className="font-medium">{product?.name_en}</p>
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-muted-foreground block mb-1">POLSKI</span>
-                      <p className="font-medium">{product?.name_pl || "—"}</p>
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-muted-foreground block mb-1">УКРАЇНСЬКА</span>
-                      <p className="font-medium">{product?.name_uk || "—"}</p>
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-muted-foreground block mb-1">РУССКИЙ</span>
-                      <p className="font-medium">{product?.name_ru || "—"}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 border-b pb-4">
-                    <div>
-                      <span className="text-xs font-semibold text-muted-foreground block mb-1">КАТЕГОРИЯ</span>
-                      <p className="font-medium">
-                        {categories.find(c => c.id === product?.category_id)?.name_ru || product?.category_id}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-muted-foreground block mb-1">ЕДИНИЦА</span>
-                      <Badge variant="secondary" className="mt-1">
-                        {product?.unit}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  {product?.description && (
-                    <div className="space-y-1">
-                      <span className="text-xs font-semibold text-muted-foreground block">ОПИСАНИЕ</span>
-                      <p className="text-sm text-muted-foreground">{product.description}</p>
-                    </div>
-                  )}
-
-                  <div className="pt-2">
-                    <span className="text-[10px] text-muted-foreground uppercase">ID продукта:</span>
-                    <p className="text-[10px] font-mono select-all">{product?.id}</p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-            <CardFooter className="pt-4 border-t">
-              {editMode ? (
-                <div className="flex gap-3 w-full">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      setEditMode(false);
-                      setError("");
-                      setSuccessMessage("");
-                      // Reset form
-                      if (product) {
-                        setFormData({
-                          name_en: product.name_en,
-                          name_pl: product.name_pl || "",
-                          name_uk: product.name_uk || "",
-                          name_ru: product.name_ru || "",
-                          category_id: product.category_id,
-                          unit: product.unit,
-                          description: product.description || "",
-                        });
-                      }
-                    }}
-                    disabled={saving}
-                  >
-                    Отмена
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    onClick={handleSaveChanges}
-                    disabled={saving}
-                  >
-                    {saving ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Сохранение...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="mr-2 h-4 w-4" />
-                        Сохранить
-                      </>
-                    )}
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex gap-3 w-full">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => router.push("/products")}
-                  >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Назад
-                  </Button>
-                  
-                  <Button
-                    className="flex-1"
-                    onClick={() => setEditMode(true)}
-                  >
-                    Редактировать
-                  </Button>
-                </div>
-              )}
-            </CardFooter>
-          </Card>
+          <div className="flex items-center gap-2 mt-0.5">
+            {product.name_en && product.name_en !== (product.name_ru || product.name_uk || product.name_pl) && (
+              <span className="text-xs text-muted-foreground">{product.name_en}</span>
+            )}
+            {product.slug && (
+              <span className="text-[10px] font-mono text-muted-foreground/50 bg-muted/40 px-1.5 py-0.5 rounded">
+                slug: {product.slug}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Delete Image Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Удалить изображение?</DialogTitle>
-            <DialogDescription>
-              Изображение продукта будет удалено безвозвратно.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setDeleteDialogOpen(false)}
-            >
-              Отмена
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={handleDeleteImage}
-            >
-              Удалить
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {message && (
+        <Alert
+          variant={message.type === 'err' ? 'destructive' : 'default'}
+          className={message.type === 'ok' ? 'border-green-500 text-green-700 bg-green-50 dark:bg-green-950/20' : ''}
+        >
+          <AlertDescription>{message.text}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Photo */}
+      <section className="glass rounded-2xl p-5 space-y-4">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">📷 Фото</h2>
+        <div className="flex items-start gap-6">
+          {product.image_url ? (
+            <div className="relative w-32 h-32 rounded-xl overflow-hidden ring-1 ring-border/30 shrink-0">
+              <Image src={product.image_url} alt={product.name_ru || product.name_en} fill className="object-cover" sizes="128px" />
+            </div>
+          ) : (
+            <div className="w-32 h-32 rounded-xl bg-muted flex items-center justify-center text-4xl shrink-0">
+              <Camera className="h-12 w-12 text-muted-foreground/40" />
+            </div>
+          )}
+          <div className="flex-1 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Загрузите новое фото. Автоматическое сжатие до 1 МБ JPEG.
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                disabled={uploading}
+                className="flex-1 rounded-xl"
+              />
+              {uploading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            </label>
+            {uploading && (
+              <p className="text-xs text-muted-foreground animate-pulse">Сжатие и загрузка...</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Names */}
+      <section className="glass rounded-2xl p-5 space-y-4">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">🌍 Названия</h2>
+        <div className="grid grid-cols-2 gap-4">
+          {(
+            [
+              ['name_en', 'EN', 'bg-blue-100 text-blue-700'],
+              ['name_ru', 'RU', 'bg-gray-100 text-gray-700'],
+              ['name_pl', 'PL', 'bg-red-100 text-red-700'],
+              ['name_uk', 'UK', 'bg-yellow-100 text-yellow-700'],
+            ] as const
+          ).map(([key, lang, cls]) => (
+            <div key={key} className="space-y-1.5">
+              <Label className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cls}`}>{lang}</span>
+              </Label>
+              <Input
+                value={(form[key] as string) ?? ''}
+                onChange={(e) => set(key, e.target.value)}
+                className="rounded-xl"
+                placeholder={`Название (${lang})`}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Category + Unit */}
+      <section className="glass rounded-2xl p-5 space-y-4">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">⚙️ Параметры</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Категория</Label>
+            <Select value={form.category_id} onValueChange={(v) => set('category_id', v)}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue placeholder="Выберите категорию" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name_ru || c.name_en}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Единица измерения</Label>
+            <Select value={form.unit} onValueChange={(v) => set('unit', v)}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue placeholder="Единица" />
+              </SelectTrigger>
+              <SelectContent>
+                {UNITS.map((u) => (
+                  <SelectItem key={u} value={u}>{u}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </section>
+
+      {/* Nutrients */}
+      <section className="glass rounded-2xl p-5 space-y-4">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">🥗 Нутриенты (на 100г)</h2>
+        <div className="grid grid-cols-5 gap-3">
+          {(
+            [
+              ['calories_per_100g', 'Ккал'],
+              ['protein_per_100g', 'Белки'],
+              ['fat_per_100g', 'Жиры'],
+              ['carbs_per_100g', 'Углеводы'],
+              ['density_g_per_ml', 'Плотность'],
+            ] as const
+          ).map(([key, label]) => (
+            <div key={key} className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{label}</Label>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                className="rounded-xl tabular-nums"
+                value={(form as Record<string, unknown>)[key] as number ?? ''}
+                onChange={(e) =>
+                  set(key, e.target.value ? parseFloat(e.target.value) : undefined)
+                }
+                placeholder="—"
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Descriptions */}
+      <section className="glass rounded-2xl p-5 space-y-4">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">📝 Описания</h2>
+        <div className="grid grid-cols-2 gap-4">
+          {(
+            [
+              ['description_en', 'EN', 'bg-blue-100 text-blue-700'],
+              ['description_ru', 'RU', 'bg-gray-100 text-gray-700'],
+              ['description_pl', 'PL', 'bg-red-100 text-red-700'],
+              ['description_uk', 'UK', 'bg-yellow-100 text-yellow-700'],
+            ] as const
+          ).map(([key, lang, cls]) => (
+            <div key={key} className="space-y-1.5">
+              <Label className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cls}`}>{lang}</span>
+              </Label>
+              <Textarea
+                rows={3}
+                value={(form[key] as string) ?? ''}
+                onChange={(e) => set(key, e.target.value)}
+                className="rounded-xl resize-none"
+                placeholder={`Описание (${lang})`}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Seasons */}
+      <section className="glass rounded-2xl p-5 space-y-4">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">🗓 Сезоны</h2>
+        <div className="flex flex-wrap gap-2">
+          {SEASONS.map((s) => {
+            const active = form.seasons?.includes(s) ?? false;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => toggleArray('seasons', s)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${
+                  active
+                    ? 'bg-primary text-primary-foreground border-primary shadow-md shadow-primary/20'
+                    : 'bg-muted/30 text-muted-foreground border-border/40 hover:bg-muted/50'
+                }`}
+              >
+                <span>{SEASON_ICONS[s]}</span>
+                {s}
+              </button>
+            );
+          })}
+        </div>
+        {(form.seasons?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {form.seasons!.map((s) => (
+              <Badge key={s} variant="secondary" className="text-xs">
+                {SEASON_ICONS[s]} {s}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Allergens */}
+      <section className="glass rounded-2xl p-5 space-y-4">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">⚠️ Аллергены</h2>
+        <div className="flex flex-wrap gap-2">
+          {ALLERGENS.map((a) => {
+            const active = form.allergens?.includes(a) ?? false;
+            return (
+              <button
+                key={a}
+                type="button"
+                onClick={() => toggleArray('allergens', a)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                  active
+                    ? 'bg-destructive/90 text-destructive-foreground border-destructive shadow-sm'
+                    : 'bg-muted/30 text-muted-foreground border-border/40 hover:bg-muted/50'
+                }`}
+              >
+                {a}
+              </button>
+            );
+          })}
+        </div>
+        {(form.allergens?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {form.allergens!.map((a) => (
+              <Badge key={a} variant="destructive" className="text-xs">
+                {a}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Save buttons */}
+      <div className="flex items-center gap-3 pt-2">
+        <Button
+          onClick={handleSave}
+          disabled={saving || uploading}
+          className="h-11 px-8 rounded-xl font-semibold"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Сохранение...
+            </>
+          ) : (
+            <>
+              <Save className="mr-2 h-4 w-4" />
+              Сохранить
+            </>
+          )}
+        </Button>
+
+        <Button
+          variant="outline"
+          onClick={handleSaveWithAutoTranslate}
+          disabled={saving || uploading}
+          className="h-11 px-8 rounded-xl font-semibold"
+        >
+          {saving ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="mr-2 h-4 w-4" />
+          )}
+          Сохранить + AI перевод
+        </Button>
+
+        <Button
+          variant="ghost"
+          onClick={() => product && resetForm(product)}
+          disabled={saving}
+          className="h-11 rounded-xl"
+        >
+          Сбросить
+        </Button>
+      </div>
+
+      {/* Meta */}
+      <div className="text-[10px] font-mono text-muted-foreground/40 select-all">
+        ID: {product.id}
+      </div>
     </div>
   );
 }
