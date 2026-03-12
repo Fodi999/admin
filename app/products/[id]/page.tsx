@@ -21,6 +21,11 @@ import {
   nutritionUpdateFoodProperties,
   aiAutofillProduct,
   aiGenerateSeo,
+  getPairings,
+  addPairing,
+  deletePairing,
+  aiGeneratePairings,
+  searchProducts,
   type Product,
   type Category,
   type UpdateProductRequest,
@@ -34,6 +39,9 @@ import {
   type CulinaryDto,
   type FoodPropertiesDto,
   type NutritionBasicRequest,
+  type PairingsResponse,
+  type PairingItem,
+  type SearchProductResult,
 } from '@/lib/admin-api';
 import { getToken, clearToken } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -49,7 +57,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Camera, Loader2, ArrowLeft, Save, Sparkles, Search, Globe } from 'lucide-react';
+import { Camera, Loader2, ArrowLeft, Save, Sparkles, Search, Globe, X, Plus } from 'lucide-react';
 
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter', 'AllYear'];
 const SEASON_MONTHS: Record<string, number[]> = {
@@ -80,7 +88,7 @@ const SEASON_ICONS: Record<string, string> = {
 
 const MONTH_NAMES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 
-type Tab = 'basic' | 'nutrition' | 'allergens' | 'culinary' | 'seasonality' | 'vitamins' | 'foodprops' | 'seo';
+type Tab = 'basic' | 'nutrition' | 'allergens' | 'culinary' | 'seasonality' | 'vitamins' | 'foodprops' | 'seo' | 'pairing';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'basic', label: 'Основное', icon: '📦' },
@@ -91,6 +99,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'foodprops', label: 'Свойства', icon: '�' },
   { id: 'seasonality', label: 'Сезонность', icon: '�' },
   { id: 'seo', label: 'SEO', icon: '🔍' },
+  { id: 'pairing', label: 'Pairing', icon: '🧬' },
 ];
 
 export default function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
@@ -120,6 +129,14 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     og_image: '',
   });
   const [seoLoading, setSeoLoading] = useState(false);
+  // Pairing state
+  const [pairings, setPairings] = useState<PairingsResponse | null>(null);
+  const [pairingLoading, setPairingLoading] = useState(false);
+  const [pairingSearch, setPairingSearch] = useState('');
+  const [pairingSearchResults, setPairingSearchResults] = useState<SearchProductResult[]>([]);
+  const [pairingSearching, setPairingSearching] = useState(false);
+  const [addPairingType, setAddPairingType] = useState<string>('primary');
+  const [addPairingStrength, setAddPairingStrength] = useState<number>(8);
   const [activeTab, setActiveTab] = useState<Tab>('basic');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -139,6 +156,8 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
           setNutrition(nutr);
           resetNutritionForms(nutr);
         }
+        // Load pairings in parallel (non-blocking)
+        getPairings(token, id).then(setPairings).catch(() => {});
       })
       .catch((err) => {
         if (err instanceof Error && err.message.includes('401')) {
@@ -373,6 +392,72 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     } finally { setSeoLoading(false); }
   }
 
+  // ── Pairing handlers ────────────────────────────────────────────
+  async function handleLoadPairings() {
+    const token = getToken();
+    if (!token) return;
+    const data = await getPairings(token, id).catch(() => null);
+    if (data) setPairings(data);
+  }
+
+  async function handleAddPairing(pairedId: string) {
+    const token = getToken();
+    if (!token) { router.push('/login'); return; }
+    setSaving(true); setMessage(null);
+    try {
+      const updated = await addPairing(token, id, pairedId, addPairingType, addPairingStrength);
+      setPairings(updated);
+      setPairingSearch('');
+      setPairingSearchResults([]);
+      setMessage({ type: 'ok', text: '✅ Pairing добавлен!' });
+    } catch (err) {
+      setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
+    } finally { setSaving(false); }
+  }
+
+  async function handleDeletePairing(pairingId: string) {
+    const token = getToken();
+    if (!token) { router.push('/login'); return; }
+    try {
+      await deletePairing(token, id, pairingId);
+      await handleLoadPairings();
+      setMessage({ type: 'ok', text: '✅ Pairing удалён!' });
+    } catch (err) {
+      setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
+    }
+  }
+
+  async function handleAiPairings() {
+    const token = getToken();
+    if (!token) { router.push('/login'); return; }
+    setPairingLoading(true); setMessage(null);
+    try {
+      const result = await aiGeneratePairings(token, id);
+      setPairings(result.pairings);
+      const msg = result.not_found_in_catalog.length > 0
+        ? `🤖 AI добавил ${result.inserted} pairings! Не найдены: ${result.not_found_in_catalog.join(', ')}`
+        : `🤖 AI добавил ${result.inserted} pairings!`;
+      setMessage({ type: 'ok', text: msg });
+    } catch (err) {
+      setMessage({ type: 'err', text: `❌ AI: ${err instanceof Error ? err.message : 'Ошибка'}` });
+    } finally { setPairingLoading(false); }
+  }
+
+  // Debounced ingredient search for pairing
+  useEffect(() => {
+    if (pairingSearch.length < 2) { setPairingSearchResults([]); return; }
+    const token = getToken();
+    if (!token) return;
+    setPairingSearching(true);
+    const timeout = setTimeout(() => {
+      searchProducts(token, pairingSearch)
+        .then((results) => setPairingSearchResults(results.filter((r) => r.id !== id)))
+        .catch(() => setPairingSearchResults([]))
+        .finally(() => setPairingSearching(false));
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [pairingSearch, id]);
+
   // ── AI Autofill ──────────────────────────────────────────────────
   async function handleAiAutofill() {
     const token = getToken();
@@ -534,6 +619,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     vitamins: handleSaveVitamins,
     foodprops: handleSaveFoodProps,
     seo: handleSaveSeo,
+    pairing: handleLoadPairings,
   };
 
   const availMonths = nutritionBasic.availability_months ?? Array(12).fill(false);
@@ -592,23 +678,35 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         </Alert>
       )}
 
+      {/* Nutrition not found banner */}
+      {!nutrition && activeTab !== 'basic' && (
+        <Alert className="border-amber-400/60 bg-amber-50/60 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300">
+          <AlertDescription className="text-sm">
+            ℹ️ Nutrition-данные для этого продукта ещё не созданы на сервере. Заполните любое поле и нажмите «Сохранить» — запись создастся автоматически.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Tab navigation */}
-      <div className="flex gap-1 bg-muted/40 p-1 rounded-2xl overflow-x-auto">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => { setActiveTab(tab.id); setMessage(null); }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap flex-1 justify-center ${
-              activeTab === tab.id
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <span>{tab.icon}</span>
-            {tab.label}
-          </button>
-        ))}
+      <div className="flex gap-1 bg-muted/40 p-1 rounded-2xl overflow-x-auto scrollbar-none">
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => { setActiveTab(tab.id); setMessage(null); }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
+                isActive
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
+              }`}
+            >
+              <span className="text-base leading-none">{tab.icon}</span>
+              <span className={isActive ? 'inline' : 'hidden sm:inline'}>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* ── TAB: BASIC ──────────────────────────────────────────────── */}
@@ -1376,6 +1474,169 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
               {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Сохранение...</> : <><Save className="mr-2 h-4 w-4" />Сохранить SEO</>}
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* ── TAB: PAIRING ───────────────────────────────────────────── */}
+      {activeTab === 'pairing' && (
+        <div className="space-y-5">
+          {/* AI Generate + Add controls */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={handleAiPairings}
+              disabled={pairingLoading || saving}
+              className="rounded-xl bg-gradient-to-r from-violet-50 to-purple-50 hover:from-violet-100 hover:to-purple-100 border-violet-200 text-violet-700 dark:from-violet-950/30 dark:to-purple-950/30 dark:text-violet-300 dark:border-violet-800"
+            >
+              {pairingLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
+              {pairingLoading ? 'AI генерирует...' : '🤖 AI Generate Pairings'}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              AI подберёт сочетания из каталога
+            </span>
+          </div>
+
+          {/* Add pairing search */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              Добавить pairing
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="md:col-span-2 space-y-1.5">
+                <Label>Поиск ингредиента</Label>
+                <div className="relative">
+                  <Input
+                    value={pairingSearch}
+                    onChange={(e) => setPairingSearch(e.target.value)}
+                    className="rounded-xl"
+                    placeholder="Введите название..."
+                  />
+                  {pairingSearching && (
+                    <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+                {/* Search results dropdown */}
+                {pairingSearchResults.length > 0 && (
+                  <div className="border border-border/50 rounded-xl bg-background shadow-lg max-h-48 overflow-y-auto">
+                    {pairingSearchResults.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => handleAddPairing(r.id)}
+                        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-muted/50 transition-colors text-left"
+                      >
+                        {r.image_url ? (
+                          <div className="relative w-8 h-8 rounded-lg overflow-hidden shrink-0">
+                            <Image src={r.image_url} alt="" fill className="object-cover" sizes="32px" />
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-muted shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{r.name_en}</div>
+                          {r.name_ru && <div className="text-xs text-muted-foreground truncate">{r.name_ru}</div>}
+                        </div>
+                        <Badge variant="outline" className="text-[10px] shrink-0">{r.product_type || '—'}</Badge>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label>Тип</Label>
+                <select
+                  value={addPairingType}
+                  onChange={(e) => setAddPairingType(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl border border-input bg-background text-sm"
+                >
+                  <option value="primary">🟢 Primary</option>
+                  <option value="secondary">🔵 Secondary</option>
+                  <option value="experimental">🟡 Experimental</option>
+                  <option value="avoid">🔴 Avoid</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Сила (1-10)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  value={addPairingStrength}
+                  onChange={(e) => setAddPairingStrength(parseFloat(e.target.value) || 8)}
+                  className="rounded-xl"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Pairing lists by type */}
+          {(['primary', 'secondary', 'experimental', 'avoid'] as const).map((ptype) => {
+            const items: PairingItem[] = pairings?.[ptype] ?? [];
+            const config = {
+              primary: { emoji: '🟢', label: 'Primary — классические сочетания', color: 'border-green-200 bg-green-50/30 dark:bg-green-950/10' },
+              secondary: { emoji: '🔵', label: 'Secondary — хорошие сочетания', color: 'border-blue-200 bg-blue-50/30 dark:bg-blue-950/10' },
+              experimental: { emoji: '🟡', label: 'Experimental — креативные', color: 'border-yellow-200 bg-yellow-50/30 dark:bg-yellow-950/10' },
+              avoid: { emoji: '🔴', label: 'Avoid — не сочетается', color: 'border-red-200 bg-red-50/30 dark:bg-red-950/10' },
+            }[ptype];
+
+            if (items.length === 0 && ptype !== 'primary') return null;
+
+            return (
+              <section key={ptype} className={`glass rounded-2xl p-5 space-y-3 border ${config.color}`}>
+                <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+                  {config.emoji} {config.label} ({items.length})
+                </h2>
+                {items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic">Нет pairings — нажмите AI Generate или добавьте вручную</p>
+                ) : (
+                  <div className="grid gap-2">
+                    {items.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 p-2 rounded-xl bg-background/60 border border-border/30 hover:border-border/60 transition-colors"
+                      >
+                        {item.image_url ? (
+                          <div className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0">
+                            <Image src={item.image_url} alt="" fill className="object-cover" sizes="40px" />
+                          </div>
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 text-lg">
+                            🥗
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{item.name_en}</div>
+                          {item.name_ru && <div className="text-xs text-muted-foreground truncate">{item.name_ru}</div>}
+                        </div>
+                        {item.pair_score != null && (
+                          <Badge variant="secondary" className="tabular-nums text-xs shrink-0">
+                            {item.pair_score.toFixed(1)}
+                          </Badge>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => item.id && handleDeletePairing(item.id)}
+                          className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors shrink-0"
+                          title="Удалить"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+
+          {/* Summary */}
+          {pairings && (
+            <div className="text-xs text-muted-foreground">
+              Всего: {pairings.total} pairings ({pairings.primary.length} primary, {pairings.secondary.length} secondary, {pairings.experimental.length} experimental, {pairings.avoid.length} avoid)
+            </div>
+          )}
         </div>
       )}
 

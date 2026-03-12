@@ -411,11 +411,12 @@ export async function nutritionListProducts(
 export async function nutritionGetProduct(
   token: string,
   id: string,
-): Promise<NutritionProductDetail> {
+): Promise<NutritionProductDetail | null> {
   const res = await fetch(`${N}/products/${id}`, {
     headers: authHeaders(token),
     cache: 'no-store',
   });
+  if (res.status === 404) return null;
   if (!res.ok) throw new Error('Failed to fetch nutrition product');
   return res.json();
 }
@@ -617,5 +618,114 @@ export async function auditCatalog(token: string): Promise<AuditReport> {
     const text = await res.text().catch(() => '');
     throw new Error(`Audit failed: ${res.status} ${text}`);
   }
+  return res.json();
+}
+
+// ── Food Pairing ──────────────────────────────────────────────────────────────
+export interface PairingItem {
+  id: string;
+  paired_product_id: string;
+  slug: string | null;
+  name_en: string | null;
+  name_ru: string | null;
+  image_url: string | null;
+  pair_score: number | null;
+  flavor_score: number | null;
+  nutrition_score: number | null;
+  culinary_score: number | null;
+}
+
+export interface PairingsResponse {
+  product_id: string;
+  total: number;
+  primary: PairingItem[];
+  secondary: PairingItem[];
+  experimental: PairingItem[];
+  avoid: PairingItem[];
+}
+
+export async function getPairings(token: string, id: string): Promise<PairingsResponse> {
+  const res = await fetch(`${API_BASE}/api/admin/catalog/products/${id}/pairings`, {
+    headers: authHeaders(token),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error('Failed to fetch pairings');
+  return res.json();
+}
+
+export async function addPairing(
+  token: string,
+  productId: string,
+  pairedProductId: string,
+  pairingType: string,
+  strength: number,
+): Promise<PairingsResponse> {
+  const res = await fetch(`${API_BASE}/api/admin/catalog/products/${productId}/pairings`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      paired_product_id: pairedProductId,
+      pairing_type: pairingType,
+      strength,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Failed to add pairing: ${text}`);
+  }
+  return res.json();
+}
+
+export async function deletePairing(
+  token: string,
+  productId: string,
+  pairingId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/products/${productId}/pairings/${pairingId}`,
+    { method: 'DELETE', headers: authHeaders(token) },
+  );
+  if (!res.ok) throw new Error('Failed to delete pairing');
+}
+
+export interface AiPairingsResult {
+  inserted: number;
+  not_found_in_catalog: string[];
+  pairings: PairingsResponse;
+}
+
+export async function aiGeneratePairings(
+  token: string,
+  id: string,
+): Promise<AiPairingsResult> {
+  const res = await fetch(`${API_BASE}/api/admin/catalog/products/${id}/ai-pairings`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`AI pairings failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+export interface SearchProductResult {
+  id: string;
+  slug: string | null;
+  name_en: string;
+  name_ru: string | null;
+  image_url: string | null;
+  product_type: string | null;
+}
+
+export async function searchProducts(
+  token: string,
+  query: string,
+): Promise<SearchProductResult[]> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/products/search?q=${encodeURIComponent(query)}`,
+    { headers: authHeaders(token), cache: 'no-store' },
+  );
+  if (!res.ok) throw new Error('Search failed');
   return res.json();
 }
