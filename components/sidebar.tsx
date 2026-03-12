@@ -9,6 +9,7 @@ import {
   Tags,
   Users, 
   Settings,
+  ClipboardCheck,
   ChefHat,
   FileText,
   Menu,
@@ -48,6 +49,11 @@ const routes = [
     label: "Users",
     icon: Users,
     href: "/users",
+  },
+  {
+    label: "AI Audit",
+    icon: ClipboardCheck,
+    href: "/audit",
   },
   {
     label: "Settings",

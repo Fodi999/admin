@@ -275,6 +275,13 @@ export default function ProductsPage() {
                     <Badge variant="outline" className="text-xs rounded-lg">
                       {catName(p.category_id)}
                     </Badge>
+                    {p.product_type && (
+                      <div className="mt-1">
+                        <Badge variant="secondary" className="text-[10px] rounded-md">
+                          {p.product_type}
+                        </Badge>
+                      </div>
+                    )}
                   </td>
 
                   <td className="p-3">

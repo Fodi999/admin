@@ -622,3 +622,489 @@ GET    /api/admin/users
 DELETE /api/admin/users/:id
 GET    /api/admin/stats
 ```
+
+---
+
+## 10. Создание статей по категориям
+
+### Категории — константа
+
+```typescript
+// lib/article-categories.ts
+export const ARTICLE_CATEGORIES = [
+  { value: '',            label: { ru: 'Все',          en: 'All' } },
+  { value: 'techniques',  label: { ru: 'Техники',      en: 'Techniques' } },
+  { value: 'ingredients', label: { ru: 'Ингредиенты',  en: 'Ingredients' } },
+  { value: 'fish',        label: { ru: 'Рыба',         en: 'Fish' } },
+  { value: 'sushi',       label: { ru: 'Суши',         en: 'Sushi' } },
+  { value: 'recipes',     label: { ru: 'Рецепты',      en: 'Recipes' } },
+  { value: 'equipment',   label: { ru: 'Оборудование', en: 'Equipment' } },
+  { value: 'theory',      label: { ru: 'Теория',       en: 'Theory' } },
+] as const
+
+export type ArticleCategory = typeof ARTICLE_CATEGORIES[number]['value']
+```
+
+---
+
+### TypeScript интерфейс
+
+```typescript
+// types/article.ts
+export interface Article {
+  id: string
+  slug: string
+  category: string          // "techniques" | "fish" | "sushi" | ...
+  title_en: string
+  title_pl: string
+  title_ru: string
+  title_uk: string
+  content_en: string
+  content_pl: string
+  content_ru: string
+  content_uk: string
+  image_url: string | null
+  seo_title: string
+  seo_description: string
+  published: boolean
+  order_index: number
+  created_at: string        // ISO 8601: "2026-03-10T13:33:54Z"
+  updated_at: string
+}
+```
+
+---
+
+### Список статей с фильтром по категориям
+
+```tsx
+// app/admin/cms/articles/page.tsx
+'use client'
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { apiFetch } from '@/lib/api'
+import { ARTICLE_CATEGORIES } from '@/lib/article-categories'
+import type { Article } from '@/types/article'
+
+export default function AdminArticlesPage() {
+  const [articles, setArticles] = useState<Article[]>([])
+  const [filterCategory, setFilterCategory] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  async function load(category = '') {
+    setLoading(true)
+    try {
+      const qs = category ? `?category=${category}` : ''
+      const data = await apiFetch<{ data: Article[] } | Article[]>(
+        `/api/admin/cms/articles${qs}`
+      )
+      setArticles(Array.isArray(data) ? data : (data as any).data ?? [])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load(filterCategory) }, [filterCategory])
+
+  async function handleDelete(id: string, title: string) {
+    if (!confirm(`Удалить "${title}"?`)) return
+    await apiFetch(`/api/admin/cms/articles/${id}`, { method: 'DELETE' })
+    load(filterCategory)
+  }
+
+  async function togglePublish(article: Article) {
+    await apiFetch(`/api/admin/cms/articles/${article.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ published: !article.published }),
+    })
+    load(filterCategory)
+  }
+
+  const catLabel = (v: string) =>
+    ARTICLE_CATEGORIES.find(c => c.value === v)?.label.ru ?? v || '—'
+
+  return (
+    <div className="max-w-5xl mx-auto p-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Статьи</h1>
+        <Link
+          href="/admin/cms/articles/new"
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+        >
+          + Новая статья
+        </Link>
+      </div>
+
+      {/* Фильтр по категории */}
+      <div className="flex gap-2 flex-wrap">
+        {ARTICLE_CATEGORIES.map(cat => (
+          <button
+            key={cat.value}
+            onClick={() => setFilterCategory(cat.value)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              filterCategory === cat.value
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {cat.label.ru}
+          </button>
+        ))}
+      </div>
+
+      {/* Таблица */}
+      {loading ? (
+        <div className="text-center py-10 text-gray-400">Загрузка...</div>
+      ) : (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="text-left px-4 py-3 text-gray-600">Заголовок</th>
+                <th className="text-left px-4 py-3 text-gray-600">Категория</th>
+                <th className="text-left px-4 py-3 text-gray-600">Slug</th>
+                <th className="text-center px-4 py-3 text-gray-600">Статус</th>
+                <th className="text-right px-4 py-3 text-gray-600">Действия</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {articles.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-10 text-gray-400">Статей нет</td>
+                </tr>
+              ) : articles.map(article => (
+                <tr key={article.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{article.title_ru || article.title_en}</div>
+                    <div className="text-xs text-gray-400">{article.title_en}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {article.category ? (
+                      <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full">
+                        {catLabel(article.category)}
+                      </span>
+                    ) : <span className="text-gray-400 text-xs">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <code className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                      {article.slug}
+                    </code>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      onClick={() => togglePublish(article)}
+                      className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                        article.published
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                          : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                      }`}
+                    >
+                      {article.published ? '✅ Опубликовано' : '📝 Черновик'}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex gap-2 justify-end">
+                      <Link
+                        href={`/admin/cms/articles/${article.id}/edit`}
+                        className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg"
+                      >
+                        ✏️ Ред.
+                      </Link>
+                      <button
+                        onClick={() => handleDelete(article.id, article.title_ru || article.title_en)}
+                        className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+---
+
+### Форма создания статьи
+
+```tsx
+// app/admin/cms/articles/new/page.tsx
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { apiFetch } from '@/lib/api'
+import { ARTICLE_CATEGORIES } from '@/lib/article-categories'
+
+const LANGS = ['en', 'ru', 'pl', 'uk'] as const
+type Lang = typeof LANGS[number]
+const LANG_FLAGS: Record<Lang, string> = { en: '🇬🇧 EN', ru: '🇷🇺 RU', pl: '🇵🇱 PL', uk: '🇺🇦 UK' }
+
+export default function NewArticlePage() {
+  const router = useRouter()
+  const [lang, setLang] = useState<Lang>('ru')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const [form, setForm] = useState({
+    slug: '', category: 'techniques',
+    title_en: '', title_pl: '', title_ru: '', title_uk: '',
+    content_en: '', content_pl: '', content_ru: '', content_uk: '',
+    image_url: '',
+    seo_title: '', seo_description: '',
+    published: false, order_index: 0,
+  })
+
+  const set = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }))
+
+  async function handleSave() {
+    if (!form.title_en.trim()) { setError('Title EN обязателен'); return }
+    setSaving(true); setError('')
+    try {
+      await apiFetch('/api/admin/cms/articles', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...form,
+          slug: form.slug.trim() || undefined,
+          image_url: form.image_url.trim() || null,
+        }),
+      })
+      router.push('/admin/cms/articles')
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Новая статья</h1>
+        <button onClick={() => router.back()} className="text-gray-500 hover:text-gray-700">
+          ← Назад
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
+
+      {/* ─── Категория + Slug + Порядок ─── */}
+      <div className="bg-white rounded-xl border p-5 space-y-4">
+        <h2 className="font-semibold text-gray-700">Основные параметры</h2>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Категория</label>
+          <select
+            value={form.category}
+            onChange={e => set('category', e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          >
+            {ARTICLE_CATEGORIES.filter(c => c.value !== '').map(cat => (
+              <option key={cat.value} value={cat.value}>
+                {cat.label.ru} ({cat.value})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              Slug <span className="text-gray-400 font-normal">— авто из title EN если пусто</span>
+            </label>
+            <input
+              type="text"
+              value={form.slug}
+              onChange={e => set('slug', e.target.value)}
+              placeholder="knife-techniques"
+              className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Порядок</label>
+            <input
+              type="number"
+              value={form.order_index}
+              onChange={e => set('order_index', Number(e.target.value))}
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Заголовок + Контент по языкам ─── */}
+      <div className="bg-white rounded-xl border p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-700">Заголовок и контент</h2>
+          <div className="flex gap-1">
+            {LANGS.map(l => (
+              <button
+                key={l}
+                onClick={() => setLang(l)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  lang === l ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {LANG_FLAGS[l]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {LANGS.map(l => (
+          <div key={l} className={lang === l ? 'block space-y-3' : 'hidden'}>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Заголовок {LANG_FLAGS[l]}
+                {l === 'en' && <span className="text-red-500 ml-1">*</span>}
+              </label>
+              <input
+                type="text"
+                value={(form as any)[`title_${l}`]}
+                onChange={e => set(`title_${l}`, e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Контент {LANG_FLAGS[l]}
+              </label>
+              <textarea
+                rows={10}
+                value={(form as any)[`content_${l}`]}
+                onChange={e => set(`content_${l}`, e.target.value)}
+                placeholder="Текст статьи..."
+                className="w-full border rounded-lg px-3 py-2 text-sm resize-y font-mono"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ─── SEO ─── */}
+      <div className="bg-white rounded-xl border p-5 space-y-4">
+        <h2 className="font-semibold text-gray-700">SEO</h2>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">
+            SEO Title <span className="text-gray-400 font-normal">(≤ 60 символов)</span>
+          </label>
+          <input
+            type="text" maxLength={60}
+            value={form.seo_title}
+            onChange={e => set('seo_title', e.target.value)}
+            placeholder="Japanese Knife Techniques | Chef Guide"
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-gray-400 mt-1 text-right">{form.seo_title.length}/60</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">
+            SEO Description <span className="text-gray-400 font-normal">(≤ 160 символов)</span>
+          </label>
+          <textarea
+            rows={2} maxLength={160}
+            value={form.seo_description}
+            onChange={e => set('seo_description', e.target.value)}
+            placeholder="Master Japanese knife techniques..."
+            className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+          />
+          <p className="text-xs text-gray-400 mt-1 text-right">{form.seo_description.length}/160</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Фото (URL)</label>
+          <input
+            type="text"
+            value={form.image_url}
+            onChange={e => set('image_url', e.target.value)}
+            placeholder="https://pub-xxx.r2.dev/cms/articles/photo.jpg"
+            className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+          />
+        </div>
+      </div>
+
+      {/* ─── Публикация ─── */}
+      <div className="bg-white rounded-xl border p-5">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div className="relative">
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={form.published}
+              onChange={e => set('published', e.target.checked)}
+            />
+            <div className={`w-11 h-6 rounded-full transition-colors ${
+              form.published ? 'bg-green-500' : 'bg-gray-300'
+            }`} />
+            <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+              form.published ? 'translate-x-5' : ''
+            }`} />
+          </div>
+          <span className="font-medium">
+            {form.published ? '✅ Опубликовать сразу' : '📝 Сохранить как черновик'}
+          </span>
+        </label>
+      </div>
+
+      {/* ─── Кнопки ─── */}
+      <div className="flex gap-3">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-3 rounded-xl"
+        >
+          {saving ? 'Сохранение...' : '💾 Сохранить статью'}
+        </button>
+        <button
+          onClick={() => router.back()}
+          className="px-6 py-3 border rounded-xl text-gray-600 hover:bg-gray-50"
+        >
+          Отмена
+        </button>
+      </div>
+    </div>
+  )
+}
+```
+
+---
+
+### Структура файлов
+
+```
+app/admin/cms/articles/
+├── page.tsx              ← список с фильтром по категориям
+├── new/
+│   └── page.tsx          ← форма создания
+└── [id]/
+    └── edit/
+        └── page.tsx      ← форма редактирования (то же что new + useEffect)
+
+lib/
+└── article-categories.ts ← ARTICLE_CATEGORIES константа
+
+types/
+└── article.ts            ← TypeScript интерфейсы
+```
+
+---
+
+### Публичный API — фильтр на фронтенд-блоге
+
+```
+GET /public/articles                              — все опубликованные
+GET /public/articles?category=techniques          — по категории
+GET /public/articles?category=fish                — только рыба
+GET /public/articles?search=карп&category=ingredients
+GET /public/articles?page=2&limit=10
+```
