@@ -102,6 +102,15 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'pairing', label: 'Pairing', icon: '🧬' },
 ];
 
+/** Add cache-buster to image_url so Next.js <Image> always fetches the latest version from R2 */
+function bustImageCache(p: Product): Product {
+  if (p.image_url) {
+    const base = p.image_url.split('?')[0];
+    return { ...p, image_url: `${base}?t=${Date.now()}` };
+  }
+  return p;
+}
+
 export default function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -149,9 +158,10 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     if (!token) { router.push('/login'); return; }
     Promise.all([getProduct(token, id), getCategories(token), nutritionGetProduct(token, id).catch(() => null)])
       .then(([p, cats, nutr]) => {
-        setProduct(p);
+        const cached = bustImageCache(p);
+        setProduct(cached);
         setCategories(cats);
-        resetForm(p);
+        resetForm(cached);
         if (nutr) {
           setNutrition(nutr);
           resetNutritionForms(nutr);
@@ -245,8 +255,9 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     setSaving(true); setMessage(null);
     try {
       const updated = await updateProduct(token, id, form);
-      setProduct(updated);
-      resetForm(updated);
+      const cached = bustImageCache(updated);
+      setProduct(cached);
+      resetForm(cached);
       setMessage({ type: 'ok', text: '✅ Основные данные сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
@@ -259,8 +270,9 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     setSaving(true); setMessage(null);
     try {
       const updated = await updateProduct(token, id, { ...form, auto_translate: true });
-      setProduct(updated);
-      resetForm(updated);
+      const cached = bustImageCache(updated);
+      setProduct(cached);
+      resetForm(cached);
       setMessage({ type: 'ok', text: '✅ Сохранено + автоперевод применён!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
@@ -364,7 +376,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       if (seo.og_description) seoData.og_description = seo.og_description;
       if (seo.og_image) seoData.og_image = seo.og_image;
       const updated = await updateProduct(token, id, seoData as UpdateProductRequest);
-      setProduct(updated);
+      setProduct(bustImageCache(updated));
       setMessage({ type: 'ok', text: '✅ SEO данные сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
@@ -546,7 +558,82 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         setNutritionBasic((prev) => ({ ...prev, availability_months: months }));
       }
 
-      setMessage({ type: 'ok', text: '🤖 AI заполнил пустые поля — проверьте и нажмите Сохранить!' });
+      setMessage({ type: 'ok', text: '🤖 AI заполнил — автосохранение...' });
+
+      // ── Auto-save ALL sections to server ──
+      const savePromises: Promise<unknown>[] = [];
+
+      // Save basic (descriptions)
+      const basicData: Record<string, unknown> = {};
+      if (ai.description_en) basicData.description_en = ai.description_en;
+      if (ai.description_ru) basicData.description_ru = ai.description_ru;
+      if (ai.description_pl) basicData.description_pl = ai.description_pl;
+      if (ai.description_uk) basicData.description_uk = ai.description_uk;
+      if (ai.product_type) basicData.product_type = ai.product_type;
+      if (Object.keys(basicData).length > 0) {
+        savePromises.push(updateProduct(token, id, basicData as UpdateProductRequest));
+      }
+
+      // Save macros
+      if (ai.macros) {
+        savePromises.push(nutritionUpdateMacros(token, id, ai.macros));
+      }
+
+      // Save vitamins
+      if (ai.vitamins) {
+        savePromises.push(nutritionUpdateVitamins(token, id, filterNulls(ai.vitamins)));
+      }
+
+      // Save minerals
+      if (ai.minerals) {
+        savePromises.push(nutritionUpdateMinerals(token, id, filterNulls(ai.minerals)));
+      }
+
+      // Save fatty acids
+      if (ai.fatty_acids) {
+        savePromises.push(nutritionUpdateFattyAcids(token, id, filterNulls(ai.fatty_acids)));
+      }
+
+      // Save allergens
+      if (ai.allergens) {
+        savePromises.push(nutritionUpdateAllergens(token, id, ai.allergens));
+      }
+
+      // Save diet flags
+      if (ai.diet_flags) {
+        savePromises.push(nutritionUpdateDietFlags(token, id, ai.diet_flags));
+      }
+
+      // Save culinary
+      if (ai.culinary) {
+        savePromises.push(nutritionUpdateCulinary(token, id, filterNulls(ai.culinary)));
+      }
+
+      // Save food properties
+      if (ai.food_properties) {
+        savePromises.push(nutritionUpdateFoodProperties(token, id, filterNulls(ai.food_properties)));
+      }
+
+      // Save basic nutrition (density, portion, shelf_life, availability)
+      const basicNutr: Record<string, unknown> = {};
+      if (ai.density_g_per_ml != null) basicNutr.density_g_per_ml = ai.density_g_per_ml;
+      if (ai.typical_portion_g != null) basicNutr.typical_portion_g = ai.typical_portion_g;
+      if (ai.shelf_life_days != null) basicNutr.shelf_life_days = ai.shelf_life_days;
+      if (ai.seasons) {
+        const months = Array(12).fill(false);
+        for (const s of ai.seasons as string[]) {
+          if (s === 'AllYear') { months.fill(true); break; }
+          const idxs = SEASON_MONTHS[s];
+          if (idxs) idxs.forEach((m: number) => { months[m] = true; });
+        }
+        basicNutr.availability_months = months;
+      }
+      if (Object.keys(basicNutr).length > 0) {
+        savePromises.push(nutritionUpdateBasic(token, id, basicNutr as NutritionBasicRequest));
+      }
+
+      await Promise.all(savePromises);
+      setMessage({ type: 'ok', text: '🤖✅ AI заполнил и сохранил все данные!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ AI: ${err instanceof Error ? err.message : 'Ошибка'}` });
     } finally { setAiLoading(false); }
@@ -577,8 +664,11 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         useWebWorker: true,
         fileType: 'image/jpeg',
       });
-      const imageUrl = await uploadProductImage(token, id, compressed as File);
-      setProduct((prev) => prev ? { ...prev, image_url: imageUrl } : prev);
+      // imageCompression returns Blob — wrap in a real File so FormData sends correct content-type & filename
+      const compressedFile = new File([compressed], `${id}.jpg`, { type: 'image/jpeg' });
+      const imageUrl = await uploadProductImage(token, id, compressedFile);
+      // Cache-bust so Next.js <Image> reloads the new photo
+      setProduct((prev) => prev ? bustImageCache({ ...prev, image_url: imageUrl }) : prev);
       setMessage({ type: 'ok', text: '✅ Фото загружено!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка загрузки'}` });
