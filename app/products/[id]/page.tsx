@@ -26,6 +26,9 @@ import {
   deletePairing,
   aiGeneratePairings,
   searchProducts,
+  getProductStates,
+  generateStates,
+  deleteProductStates,
   type Product,
   type Category,
   type UpdateProductRequest,
@@ -42,6 +45,8 @@ import {
   type PairingsResponse,
   type PairingItem,
   type SearchProductResult,
+  type IngredientState,
+  type IngredientStatesResponse,
 } from '@/lib/admin-api';
 import { getToken, clearToken } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -88,7 +93,7 @@ const SEASON_ICONS: Record<string, string> = {
 
 const MONTH_NAMES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 
-type Tab = 'basic' | 'nutrition' | 'allergens' | 'culinary' | 'seasonality' | 'vitamins' | 'foodprops' | 'seo' | 'pairing';
+type Tab = 'basic' | 'nutrition' | 'allergens' | 'culinary' | 'seasonality' | 'vitamins' | 'foodprops' | 'seo' | 'pairing' | 'states';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'basic', label: 'Основное', icon: '📦' },
@@ -100,7 +105,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'seasonality', label: 'Сезонность', icon: '�' },
   { id: 'seo', label: 'SEO', icon: '🔍' },
   { id: 'pairing', label: 'Pairing', icon: '🧬' },
-];
+  { id: 'states', label: 'Состояния', icon: '⚗️' },];
 
 /** Add cache-buster to image_url so Next.js <Image> always fetches the latest version from R2 */
 function bustImageCache(p: Product): Product {
@@ -146,7 +151,9 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   const [pairingSearching, setPairingSearching] = useState(false);
   const [addPairingType, setAddPairingType] = useState<string>('primary');
   const [addPairingStrength, setAddPairingStrength] = useState<number>(8);
-  const [activeTab, setActiveTab] = useState<Tab>('basic');
+  const [statesData, setStatesData] = useState<IngredientStatesResponse | null>(null);
+  const [statesLoading, setStatesLoading] = useState(false);
+  const [statesGenerating, setStatesGenerating] = useState(false);  const [activeTab, setActiveTab] = useState<Tab>('basic');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -168,7 +175,10 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         }
         // Load pairings in parallel (non-blocking)
         getPairings(token, id).then(setPairings).catch(() => {});
-      })
+        // Load states in parallel (non-blocking)
+        if (cached.slug) {
+          getProductStates(cached.slug).then(setStatesData).catch(() => {});
+        }      })
       .catch((err) => {
         if (err instanceof Error && err.message.includes('401')) {
           clearToken(); router.push('/login');
@@ -710,6 +720,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     foodprops: handleSaveFoodProps,
     seo: handleSaveSeo,
     pairing: handleLoadPairings,
+    states: () => {},
   };
 
   const availMonths = nutritionBasic.availability_months ?? Array(12).fill(false);
@@ -1726,6 +1737,170 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
             <div className="text-xs text-muted-foreground">
               Всего: {pairings.total} pairings ({pairings.primary.length} primary, {pairings.secondary.length} secondary, {pairings.experimental.length} experimental, {pairings.avoid.length} avoid)
             </div>
+          )}
+        </div>
+      )}
+
+
+      {activeTab === 'states' && (
+        <div className="space-y-5">
+          {/* Header + Actions */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const token = getToken();
+                if (!token || !product) return;
+                setStatesGenerating(true);
+                setMessage(null);
+                try {
+                  const result = await generateStates(token, product.id);
+                  setMessage({ type: 'ok', text: `✅ Сгенерировано ${result.states_created.length} состояний (всего: ${result.states_total})` });
+                  if (product.slug) {
+                    const updated = await getProductStates(product.slug);
+                    setStatesData(updated);
+                  }
+                } catch (e) {
+                  setMessage({ type: 'err', text: `❌ ${e instanceof Error ? e.message : 'Error'}` });
+                } finally {
+                  setStatesGenerating(false);
+                }
+              }}
+              disabled={statesGenerating || saving}
+              className="rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 border-emerald-200 text-emerald-700 dark:from-emerald-950/30 dark:to-teal-950/30 dark:text-emerald-300 dark:border-emerald-800"
+            >
+              {statesGenerating ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
+              {statesGenerating ? 'Генерация...' : '⚗️ Сгенерировать состояния'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const token = getToken();
+                if (!token || !product) return;
+                if (!confirm('Удалить все состояния? Можно сгенерировать заново.')) return;
+                try {
+                  await deleteProductStates(token, product.id);
+                  setStatesData(null);
+                  setMessage({ type: 'ok', text: '✅ Состояния удалены' });
+                } catch (e) {
+                  setMessage({ type: 'err', text: `❌ ${e instanceof Error ? e.message : 'Unknown'}` });
+                }
+              }}
+              className="rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+            >
+              <X className="h-4 w-4 mr-1" /> Удалить все
+            </Button>
+            {statesData && (
+              <Badge variant="secondary" className="tabular-nums">
+                {statesData.states_count} / 10 состояний
+              </Badge>
+            )}
+          </div>
+
+          {/* States Table */}
+          {!statesData || statesData.states.length === 0 ? (
+            <div className="glass rounded-2xl p-8 text-center space-y-3">
+              <div className="text-4xl">\u2697\ufe0f</div>
+              <p className="text-muted-foreground">Состояния обработки ещё не созданы</p>
+              <p className="text-xs text-muted-foreground">Нажмите &quot;Сгенерировать состояния&quot; для создания 10 состояний обработки</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 text-xs text-muted-foreground uppercase tracking-wider">
+                    <th className="text-left py-2 px-3">Состояние</th>
+                    <th className="text-left py-2 px-2">Тип</th>
+                    <th className="text-right py-2 px-2">Ккал</th>
+                    <th className="text-right py-2 px-2">Белки</th>
+                    <th className="text-right py-2 px-2">Жиры</th>
+                    <th className="text-right py-2 px-2">Углеводы</th>
+                    <th className="text-left py-2 px-2">Текстура</th>
+                    <th className="text-right py-2 px-2">Масса %</th>
+                    <th className="text-right py-2 px-2">Масло г</th>
+                    <th className="text-right py-2 px-2">Вода %</th>
+                    <th className="text-right py-2 px-2">Срок (ч)</th>
+                    <th className="text-right py-2 px-2">Темп.</th>
+                    <th className="text-right py-2 px-2">Оценка</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {statesData.states.map((s) => {
+                    const stateEmoji: Record<string, string> = {
+                      raw: '\ud83e\udd6c', boiled: '\u2668\ufe0f', steamed: '\ud83d\udca8', baked: '\ud83c\udf5e',
+                      grilled: '\ud83d\udd25', fried: '\ud83c\udf73', smoked: '\ud83c\udf2b\ufe0f', frozen: '\ud83e\uddca',
+                      dried: '\u2600\ufe0f', pickled: '\ud83e\udd52',
+                    };
+                    const typeLabel: Record<string, string> = {
+                      raw: '🥬 сырой', heat: '🔥 термо', preserved: '🧊 консерв.',
+                    };
+                    const wc = s.weight_change_percent;
+                    return (
+                      <tr key={s.state} className="border-b border-border/20 hover:bg-muted/30 transition-colors">
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">{stateEmoji[s.state] || '\u2697\ufe0f'}</span>
+                            <div>
+                              <div className="font-medium capitalize">{s.name_suffix_ru || s.state}</div>
+                              <div className="text-xs text-muted-foreground">{s.name_suffix_en}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-2">
+                          <Badge variant="outline" className="text-[10px] whitespace-nowrap">{s.state_type ? (typeLabel[s.state_type] || s.state_type) : '\u2014'}</Badge>
+                        </td>
+                        <td className="text-right py-2.5 px-2 tabular-nums font-medium">{s.calories_per_100g?.toFixed(0) ?? '\u2014'}</td>
+                        <td className="text-right py-2.5 px-2 tabular-nums">{s.protein_per_100g?.toFixed(1) ?? '\u2014'}</td>
+                        <td className="text-right py-2.5 px-2 tabular-nums">{s.fat_per_100g?.toFixed(1) ?? '\u2014'}</td>
+                        <td className="text-right py-2.5 px-2 tabular-nums">{s.carbs_per_100g?.toFixed(1) ?? '\u2014'}</td>
+                        <td className="py-2.5 px-2">
+                          <Badge variant="outline" className="text-[10px]">{s.texture || '\u2014'}</Badge>
+                        </td>
+                        <td className={`text-right py-2.5 px-2 tabular-nums font-medium ${wc != null && wc < 0 ? 'text-red-500' : wc != null && wc > 0 ? 'text-green-600' : ''}`}>
+                          {wc != null ? `${wc > 0 ? '+' : ''}${wc}%` : '\u2014'}
+                        </td>
+                        <td className="text-right py-2.5 px-2 tabular-nums">{s.oil_absorption_g != null && s.oil_absorption_g > 0 ? `${s.oil_absorption_g}g` : '\u2014'}</td>
+                        <td className="text-right py-2.5 px-2 tabular-nums">{s.water_loss_percent != null && s.water_loss_percent > 0 ? `${s.water_loss_percent}%` : '\u2014'}</td>
+                        <td className="text-right py-2.5 px-2 tabular-nums">{s.shelf_life_hours ?? '\u2014'}</td>
+                        <td className="text-right py-2.5 px-2 tabular-nums">{s.storage_temp_c != null ? `${s.storage_temp_c}\u00b0` : '\u2014'}</td>
+                        <td className="text-right py-2.5 px-2">
+                          <Badge
+                            variant={s.data_score && s.data_score >= 80 ? 'default' : 'secondary'}
+                            className="tabular-nums text-[10px]"
+                          >
+                            {s.data_score?.toFixed(0) ?? '\u2014'}%
+                          </Badge>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Notes section */}
+          {statesData && statesData.states.length > 0 && (
+            <section className="glass rounded-2xl p-5 space-y-3">
+              <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">📝 Заметки</h2>
+              <div className="grid gap-2">
+                {statesData.states.map((s) => (
+                  <details key={s.state} className="group">
+                    <summary className="flex items-center gap-2 cursor-pointer py-1.5 px-2 rounded-lg hover:bg-muted/50 transition-colors">
+                      <span className="font-medium text-sm capitalize">{s.state}</span>
+                      <span className="text-xs text-muted-foreground">\u2014 {s.name_suffix_ru}</span>
+                    </summary>
+                    <div className="ml-4 mt-1 space-y-1 text-xs text-muted-foreground">
+                      <p>\ud83c\uddec\ud83c\udde7 {s.notes_en || '\u2014'}</p>
+                      <p>\ud83c\uddf5\ud83c\uddf1 {s.notes_pl || '\u2014'}</p>
+                      <p>\ud83c\uddf7\ud83c\uddfa {s.notes_ru || '\u2014'}</p>
+                      <p>\ud83c\uddfa\ud83c\udde6 {s.notes_uk || '\u2014'}</p>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
           )}
         </div>
       )}

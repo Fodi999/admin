@@ -729,3 +729,134 @@ export async function searchProducts(
   if (!res.ok) throw new Error('Search failed');
   return res.json();
 }
+
+// ── Processing States API ───────────────────────────────────────────────
+
+export interface IngredientState {
+  state: string;
+  calories_per_100g: number | null;
+  protein_per_100g: number | null;
+  fat_per_100g: number | null;
+  carbs_per_100g: number | null;
+  fiber_per_100g: number | null;
+  water_percent: number | null;
+  shelf_life_hours: number | null;
+  storage_temp_c: number | null;
+  texture: string | null;
+  weight_change_percent: number | null;
+  state_type: string | null;
+  oil_absorption_g: number | null;
+  water_loss_percent: number | null;
+  name_suffix_en: string | null;
+  name_suffix_pl: string | null;
+  name_suffix_ru: string | null;
+  name_suffix_uk: string | null;
+  notes_en: string | null;
+  notes_pl: string | null;
+  notes_ru: string | null;
+  notes_uk: string | null;
+  data_score: number | null;
+}
+
+export interface IngredientStatesResponse {
+  slug: string;
+  ingredient_id: string;
+  name_en: string;
+  name_pl: string;
+  name_ru: string;
+  name_uk: string;
+  image_url: string | null;
+  states_count: number;
+  states: IngredientState[];
+}
+
+export interface StatesAuditResponse {
+  ok: boolean;
+  total_ingredients: number;
+  ingredients_with_all_states: number;
+  ingredients_missing_states: number;
+  total_state_records: number;
+  expected_state_records: number;
+}
+
+export interface GenerateStatesResult {
+  ok: boolean;
+  ingredient_id: string;
+  name_en: string;
+  states_created: string[];
+  states_total: number;
+}
+
+export interface BulkGenerateResult {
+  ok: boolean;
+  total_ingredients: number;
+  ingredients_processed: number;
+  states_created: number;
+  errors: string[];
+}
+
+/** Get all processing states for a product (via public API using slug) */
+export async function getProductStates(
+  slug: string,
+): Promise<IngredientStatesResponse> {
+  const res = await fetch(`${API_BASE}/public/ingredients/${slug}/states`, {
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error('Failed to fetch states');
+  return res.json();
+}
+
+/** Generate states for one ingredient (admin) */
+export async function generateStates(
+  token: string,
+  ingredientId: string,
+): Promise<GenerateStatesResult> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/states/generate/${ingredientId}`,
+    { method: 'POST', headers: authHeaders(token) },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Generate states failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+/** Generate states for ALL ingredients (admin) */
+export async function generateAllStates(
+  token: string,
+): Promise<BulkGenerateResult> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/states/generate-all`,
+    { method: 'POST', headers: authHeaders(token) },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Bulk generate failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+/** Delete all states for an ingredient (allows re-generation) */
+export async function deleteProductStates(
+  token: string,
+  ingredientId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/states/products/${ingredientId}`,
+    { method: 'DELETE', headers: authHeaders(token) },
+  );
+  if (!res.ok) throw new Error('Failed to delete states');
+}
+
+/** Get states audit (admin) */
+export async function getStatesAudit(
+  token: string,
+): Promise<StatesAuditResponse> {
+  const res = await fetch(`${API_BASE}/api/admin/catalog/states/audit`, {
+    headers: authHeaders(token),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error('Failed to fetch audit');
+  return res.json();
+}
