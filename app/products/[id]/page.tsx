@@ -101,8 +101,8 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'vitamins', label: 'Витамины', icon: '💊' },
   { id: 'allergens', label: 'Аллергены', icon: '⚠️' },
   { id: 'culinary', label: 'Кулинария', icon: '👨‍🍳' },
-  { id: 'foodprops', label: 'Свойства', icon: '�' },
-  { id: 'seasonality', label: 'Сезонность', icon: '�' },
+  { id: 'foodprops', label: 'Свойства', icon: '🔬' },
+  { id: 'seasonality', label: 'Сезонность', icon: '📅' },
   { id: 'seo', label: 'SEO', icon: '🔍' },
   { id: 'pairing', label: 'Pairing', icon: '🧬' },
   { id: 'states', label: 'Состояния', icon: '⚗️' },];
@@ -1801,106 +1801,117 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
           {/* States Table */}
           {!statesData || statesData.states.length === 0 ? (
             <div className="glass rounded-2xl p-8 text-center space-y-3">
-              <div className="text-4xl">\u2697\ufe0f</div>
+              <div className="text-4xl">⚗️</div>
               <p className="text-muted-foreground">Состояния обработки ещё не созданы</p>
               <p className="text-xs text-muted-foreground">Нажмите &quot;Сгенерировать состояния&quot; для создания 10 состояний обработки</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/50 text-xs text-muted-foreground uppercase tracking-wider">
-                    <th className="text-left py-2 px-3">Состояние</th>
-                    <th className="text-left py-2 px-2">Тип</th>
-                    <th className="text-right py-2 px-2">Ккал</th>
-                    <th className="text-right py-2 px-2">Белки</th>
-                    <th className="text-right py-2 px-2">Жиры</th>
-                    <th className="text-right py-2 px-2">Углеводы</th>
-                    <th className="text-left py-2 px-2">Текстура</th>
-                    <th className="text-right py-2 px-2">Масса %</th>
-                    <th className="text-right py-2 px-2">Масло г</th>
-                    <th className="text-right py-2 px-2">Вода %</th>
-                    <th className="text-right py-2 px-2">Срок (ч)</th>
-                    <th className="text-right py-2 px-2">Темп.</th>
-                    <th className="text-right py-2 px-2">Оценка</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {statesData.states.map((s) => {
-                    const stateEmoji: Record<string, string> = {
-                      raw: '\ud83e\udd6c', boiled: '\u2668\ufe0f', steamed: '\ud83d\udca8', baked: '\ud83c\udf5e',
-                      grilled: '\ud83d\udd25', fried: '\ud83c\udf73', smoked: '\ud83c\udf2b\ufe0f', frozen: '\ud83e\uddca',
-                      dried: '\u2600\ufe0f', pickled: '\ud83e\udd52',
-                    };
-                    const typeLabel: Record<string, string> = {
-                      raw: '🥬 сырой', heat: '🔥 термо', preserved: '🧊 консерв.',
-                    };
-                    const wc = s.weight_change_percent;
-                    return (
-                      <tr key={s.state} className="border-b border-border/20 hover:bg-muted/30 transition-colors">
-                        <td className="py-2.5 px-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-base">{stateEmoji[s.state] || '\u2697\ufe0f'}</span>
-                            <div>
-                              <div className="font-medium capitalize">{s.name_suffix_ru || s.state}</div>
-                              <div className="text-xs text-muted-foreground">{s.name_suffix_en}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-2">
-                          <Badge variant="outline" className="text-[10px] whitespace-nowrap">{s.state_type ? (typeLabel[s.state_type] || s.state_type) : '\u2014'}</Badge>
-                        </td>
-                        <td className="text-right py-2.5 px-2 tabular-nums font-medium">{s.calories_per_100g?.toFixed(0) ?? '\u2014'}</td>
-                        <td className="text-right py-2.5 px-2 tabular-nums">{s.protein_per_100g?.toFixed(1) ?? '\u2014'}</td>
-                        <td className="text-right py-2.5 px-2 tabular-nums">{s.fat_per_100g?.toFixed(1) ?? '\u2014'}</td>
-                        <td className="text-right py-2.5 px-2 tabular-nums">{s.carbs_per_100g?.toFixed(1) ?? '\u2014'}</td>
-                        <td className="py-2.5 px-2">
-                          <Badge variant="outline" className="text-[10px]">{s.texture || '\u2014'}</Badge>
-                        </td>
-                        <td className={`text-right py-2.5 px-2 tabular-nums font-medium ${wc != null && wc < 0 ? 'text-red-500' : wc != null && wc > 0 ? 'text-green-600' : ''}`}>
-                          {wc != null ? `${wc > 0 ? '+' : ''}${wc}%` : '\u2014'}
-                        </td>
-                        <td className="text-right py-2.5 px-2 tabular-nums">{s.oil_absorption_g != null && s.oil_absorption_g > 0 ? `${s.oil_absorption_g}g` : '\u2014'}</td>
-                        <td className="text-right py-2.5 px-2 tabular-nums">{s.water_loss_percent != null && s.water_loss_percent > 0 ? `${s.water_loss_percent}%` : '\u2014'}</td>
-                        <td className="text-right py-2.5 px-2 tabular-nums">{s.shelf_life_hours ?? '\u2014'}</td>
-                        <td className="text-right py-2.5 px-2 tabular-nums">{s.storage_temp_c != null ? `${s.storage_temp_c}\u00b0` : '\u2014'}</td>
-                        <td className="text-right py-2.5 px-2">
-                          <Badge
-                            variant={s.data_score && s.data_score >= 80 ? 'default' : 'secondary'}
-                            className="tabular-nums text-[10px]"
-                          >
-                            {s.data_score?.toFixed(0) ?? '\u2014'}%
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {statesData.states.map((s) => {
+                const stateEmoji: Record<string, string> = {
+                  raw: '🥬', boiled: '♨️', steamed: '💨', baked: '🍞',
+                  grilled: '🔥', fried: '🍳', smoked: '🌫️', frozen: '🧊',
+                  dried: '☀️', pickled: '🥒',
+                };
+                const typeColor: Record<string, string> = {
+                  raw: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300',
+                  heat: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
+                  preserved: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+                };
+                const wc = s.weight_change_percent;
+                const wcColor = wc != null && wc < 0 ? 'text-red-500' : wc != null && wc > 0 ? 'text-green-600' : 'text-muted-foreground';
+                return (
+                  <div key={s.state} className="glass rounded-2xl p-4 space-y-3">
+                    {/* Card header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">{stateEmoji[s.state] || '⚗️'}</span>
+                        <div>
+                          <div className="font-semibold text-sm">{s.name_suffix_ru || s.state}</div>
+                          <div className="text-xs text-muted-foreground">{s.name_suffix_en}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {s.state_type && (
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg ${typeColor[s.state_type] || 'bg-muted text-muted-foreground'}`}>
+                            {s.state_type}
+                          </span>
+                        )}
+                        {s.data_score != null && (
+                          <Badge variant={s.data_score >= 80 ? 'default' : 'secondary'} className="text-[10px] tabular-nums">
+                            {s.data_score.toFixed(0)}%
                           </Badge>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Notes section */}
-          {statesData && statesData.states.length > 0 && (
-            <section className="glass rounded-2xl p-5 space-y-3">
-              <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">📝 Заметки</h2>
-              <div className="grid gap-2">
-                {statesData.states.map((s) => (
-                  <details key={s.state} className="group">
-                    <summary className="flex items-center gap-2 cursor-pointer py-1.5 px-2 rounded-lg hover:bg-muted/50 transition-colors">
-                      <span className="font-medium text-sm capitalize">{s.state}</span>
-                      <span className="text-xs text-muted-foreground">\u2014 {s.name_suffix_ru}</span>
-                    </summary>
-                    <div className="ml-4 mt-1 space-y-1 text-xs text-muted-foreground">
-                      <p>\ud83c\uddec\ud83c\udde7 {s.notes_en || '\u2014'}</p>
-                      <p>\ud83c\uddf5\ud83c\uddf1 {s.notes_pl || '\u2014'}</p>
-                      <p>\ud83c\uddf7\ud83c\uddfa {s.notes_ru || '\u2014'}</p>
-                      <p>\ud83c\uddfa\ud83c\udde6 {s.notes_uk || '\u2014'}</p>
+                        )}
+                      </div>
                     </div>
-                  </details>
-                ))}
-              </div>
-            </section>
+
+                    {/* Macros row */}
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      {[
+                        { label: 'Ккал', value: s.calories_per_100g?.toFixed(0), bold: true },
+                        { label: 'Белки', value: s.protein_per_100g?.toFixed(1) },
+                        { label: 'Жиры', value: s.fat_per_100g?.toFixed(1) },
+                        { label: 'Угл.', value: s.carbs_per_100g?.toFixed(1) },
+                      ].map(({ label, value, bold }) => (
+                        <div key={label} className="bg-muted/30 rounded-xl py-1.5 px-1">
+                          <div className={`tabular-nums text-sm ${bold ? 'font-bold' : 'font-medium'}`}>{value ?? '—'}</div>
+                          <div className="text-[10px] text-muted-foreground">{label}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Details row */}
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {s.texture && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          📋 {s.texture}
+                        </span>
+                      )}
+                      {wc != null && (
+                        <span className={`font-semibold px-2 py-0.5 rounded-lg bg-muted/40 ${wcColor}`}>
+                          ⚖️ {wc > 0 ? '+' : ''}{wc}%
+                        </span>
+                      )}
+                      {s.water_loss_percent != null && s.water_loss_percent > 0 && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          💧 -{s.water_loss_percent}%
+                        </span>
+                      )}
+                      {s.oil_absorption_g != null && s.oil_absorption_g > 0 && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          🫙 +{s.oil_absorption_g}г масла
+                        </span>
+                      )}
+                      {s.shelf_life_hours != null && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          🕐 {s.shelf_life_hours >= 24 ? `${Math.round(s.shelf_life_hours / 24)}д` : `${s.shelf_life_hours}ч`}
+                        </span>
+                      )}
+                      {s.storage_temp_c != null && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          🌡️ {s.storage_temp_c}°C
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Notes (collapsible) */}
+                    {(s.notes_ru || s.notes_en) && (
+                      <details className="group/notes">
+                        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+                          📝 Заметки...
+                        </summary>
+                        <div className="mt-1.5 space-y-1 text-xs text-muted-foreground pl-2 border-l-2 border-border/40">
+                          {s.notes_ru && <p>🇷🇺 {s.notes_ru}</p>}
+                          {s.notes_en && <p>🇬🇧 {s.notes_en}</p>}
+                          {s.notes_pl && <p>🇵🇱 {s.notes_pl}</p>}
+                          {s.notes_uk && <p>🇺🇦 {s.notes_uk}</p>}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
