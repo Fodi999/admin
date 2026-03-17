@@ -67,6 +67,9 @@ export interface Product {
   og_title: string | null;
   og_description: string | null;
   og_image: string | null;
+  // Publication status
+  is_published: boolean;
+  published_at: string | null;
 }
 
 export interface Category {
@@ -747,6 +750,8 @@ export interface IngredientState {
   state_type: string | null;
   oil_absorption_g: number | null;
   water_loss_percent: number | null;
+  glycemic_index: number | null;
+  cooking_method: string | null;
   name_suffix_en: string | null;
   name_suffix_pl: string | null;
   name_suffix_ru: string | null;
@@ -849,6 +854,54 @@ export async function deleteProductStates(
   if (!res.ok) throw new Error('Failed to delete states');
 }
 
+/** Partial update for a single ingredient state (admin manual edit) */
+export interface UpdateStatePayload {
+  calories_per_100g?: number;
+  protein_per_100g?: number;
+  fat_per_100g?: number;
+  carbs_per_100g?: number;
+  fiber_per_100g?: number;
+  water_percent?: number;
+  shelf_life_hours?: number;
+  storage_temp_c?: number;
+  texture?: string;
+  weight_change_percent?: number;
+  state_type?: string;
+  oil_absorption_g?: number;
+  water_loss_percent?: number;
+  glycemic_index?: number;
+  cooking_method?: string;
+  notes_en?: string;
+  notes_pl?: string;
+  notes_ru?: string;
+  notes_uk?: string;
+  name_suffix_en?: string;
+  name_suffix_pl?: string;
+  name_suffix_ru?: string;
+  name_suffix_uk?: string;
+}
+
+export async function updateProductState(
+  token: string,
+  ingredientId: string,
+  stateName: string,
+  payload: UpdateStatePayload,
+): Promise<{ ok: boolean; state: IngredientState }> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/states/products/${ingredientId}/states/${stateName}`,
+    {
+      method: 'PUT',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Update state failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
 /** Get states audit (admin) */
 export async function getStatesAudit(
   token: string,
@@ -858,5 +911,226 @@ export async function getStatesAudit(
     cache: 'no-store',
   });
   if (!res.ok) throw new Error('Failed to fetch audit');
+  return res.json();
+}
+
+// ── Data Quality (backend = source of truth) ──────────────────────────────────
+
+export interface NotApplicableField {
+  field: string;
+  label_ru: string;
+  reason: string;
+}
+
+export interface MissingField {
+  field: string;
+  label_ru: string;
+  group: 'basic' | 'nutrition' | 'seo' | 'relations';
+  severity: 'critical' | 'recommended' | 'optional';
+}
+
+export interface DataQualityProduct {
+  id: string;
+  name_en: string;
+  product_type: string;
+  score: number;
+  filled: number;
+  total: number;
+  missing_fields: MissingField[];
+  not_applicable_fields: NotApplicableField[];
+  status: 'complete' | 'optional_missing' | 'critical_missing';
+}
+
+export interface DataQualityResponse {
+  ok: boolean;
+  total: number;
+  avg_score: number;
+  complete: number;
+  critical_missing: number;
+  optional_missing: number;
+  products: DataQualityProduct[];
+}
+
+/** GET all products data quality (backend source of truth) */
+export async function getDataQuality(token: string): Promise<DataQualityResponse> {
+  const res = await fetch(`${API_BASE}/api/admin/catalog/states/data-quality`, {
+    headers: authHeaders(token),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error('Failed to fetch data quality');
+  return res.json();
+}
+
+/** GET single product data quality (for re-validation after save) */
+export async function getProductDataQuality(
+  token: string,
+  productId: string,
+): Promise<DataQualityProduct> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/states/data-quality/${productId}`,
+    { headers: authHeaders(token), cache: 'no-store' },
+  );
+  if (!res.ok) throw new Error('Failed to fetch product data quality');
+  return res.json();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// AI Create Product Draft — two-step flow: draft → review → save
+// ════════════════════════════════════════════════════════════════════
+
+/** Confidence level for an AI-generated field */
+export type FieldConfidence = 'high' | 'medium' | 'low' | 'not_applicable';
+
+/** Source of a field value */
+export type DataSourceType = 'ai' | 'manual' | 'ai_corrected';
+
+/** A single draft field with metadata */
+export interface DraftField<T> {
+  value: T | null;
+  source: DataSourceType;
+  confidence: FieldConfidence;
+}
+
+/** Multilingual names */
+export interface DraftNames {
+  en: DraftField<string>;
+  ru: DraftField<string>;
+  pl: DraftField<string>;
+  uk: DraftField<string>;
+}
+
+/** Core nutrition values */
+export interface DraftNutrition {
+  calories_per_100g: DraftField<number>;
+  protein_per_100g: DraftField<number>;
+  fat_per_100g: DraftField<number>;
+  carbs_per_100g: DraftField<number>;
+  fiber_per_100g: DraftField<number>;
+  sugar_per_100g: DraftField<number>;
+  density_g_per_ml: DraftField<number>;
+  typical_portion_g: DraftField<number>;
+  shelf_life_days: DraftField<number>;
+}
+
+/** SEO fields */
+export interface DraftSeo {
+  seo_title: DraftField<string>;
+  seo_description: DraftField<string>;
+  seo_h1: DraftField<string>;
+}
+
+/** Quality warning for a field */
+export interface QualityWarning {
+  field: string;
+  label_ru: string;
+  severity: string;
+  message: string;
+}
+
+/** Correction made by Validation Layer (AI was wrong, backend fixed it) */
+export interface DraftCorrection {
+  field: string;
+  original_value: string;
+  corrected_to: string;
+  reason: string;
+}
+
+/** Full AI-generated product draft */
+export interface ProductDraft {
+  names: DraftNames;
+  description_en: DraftField<string>;
+  description_ru: DraftField<string>;
+  description_pl: DraftField<string>;
+  description_uk: DraftField<string>;
+  product_type: DraftField<string>;
+  unit: DraftField<string>;
+  nutrition: DraftNutrition;
+  seo: DraftSeo;
+  seasons: DraftField<string[]>;
+  confidence: number;
+  needs_review: boolean;
+  quality_warnings: QualityWarning[];
+}
+
+/** Response from AI draft endpoint */
+export interface CreateDraftResponse {
+  draft: ProductDraft;
+  raw_input: string;
+  model: string;
+  cached: boolean;
+  /** Corrections applied by Validation Layer (backend = source of truth) */
+  corrections: DraftCorrection[];
+}
+
+/**
+ * POST /api/admin/catalog/ai/create-product-draft
+ *
+ * AI generates a rich product draft from free-text input.
+ * NEVER saves to DB — returns draft for admin review.
+ */
+export async function aiCreateProductDraft(
+  token: string,
+  input: string,
+): Promise<CreateDraftResponse> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/ai/create-product-draft`,
+    {
+      method: 'POST',
+      headers: {
+        ...authHeaders(token),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ input }),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`AI draft failed: ${text}`);
+  }
+  return res.json();
+}
+
+// ── Publication Flow ──────────────────────────────────────────
+
+/**
+ * Publish a product to the public blog.
+ * Backend validates minimum quality (calories, product_type, names).
+ */
+export async function publishProduct(
+  token: string,
+  productId: string,
+): Promise<Product> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/products/${productId}/publish`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Publish failed: ${text}`);
+  }
+  return res.json();
+}
+
+/**
+ * Unpublish a product — remove it from the public blog.
+ */
+export async function unpublishProduct(
+  token: string,
+  productId: string,
+): Promise<Product> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/products/${productId}/unpublish`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Unpublish failed: ${text}`);
+  }
   return res.json();
 }

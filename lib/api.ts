@@ -32,6 +32,7 @@ export interface CreateProductRequest {
   name_input?: string;
   
   category_id?: string;
+  product_type?: string;
   unit?: string;
   description?: string;
   image_url?: string;

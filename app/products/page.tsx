@@ -264,11 +264,16 @@ export default function ProductsPage() {
                     {p.name_en && p.name_ru && (
                       <div className="text-xs text-muted-foreground">{p.name_en}</div>
                     )}
-                    {p.slug && (
-                      <div className="text-[10px] font-mono text-muted-foreground/60 mt-0.5">
-                        {p.slug}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {p.is_published ? (
+                        <Badge className="text-[9px] px-1 py-0 h-3.5 bg-green-100 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-400 rounded-sm">✓ Опубликован</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 text-muted-foreground/60 rounded-sm">Черновик</Badge>
+                      )}
+                      {p.slug && (
+                        <span className="text-[10px] font-mono text-muted-foreground/60">{p.slug}</span>
+                      )}
+                    </div>
                   </td>
 
                   <td className="p-3">

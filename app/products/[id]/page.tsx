@@ -29,6 +29,9 @@ import {
   getProductStates,
   generateStates,
   deleteProductStates,
+  publishProduct,
+  unpublishProduct,
+  updateProductState,
   type Product,
   type Category,
   type UpdateProductRequest,
@@ -47,6 +50,7 @@ import {
   type SearchProductResult,
   type IngredientState,
   type IngredientStatesResponse,
+  type UpdateStatePayload,
 } from '@/lib/admin-api';
 import { getToken, clearToken } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -62,7 +66,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Camera, Loader2, ArrowLeft, Save, Sparkles, Search, Globe, X, Plus } from 'lucide-react';
+import { Camera, Loader2, ArrowLeft, Save, Sparkles, Search, Globe, X, Plus, Pencil } from 'lucide-react';
 
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter', 'AllYear'];
 const SEASON_MONTHS: Record<string, number[]> = {
@@ -153,11 +157,16 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   const [addPairingStrength, setAddPairingStrength] = useState<number>(8);
   const [statesData, setStatesData] = useState<IngredientStatesResponse | null>(null);
   const [statesLoading, setStatesLoading] = useState(false);
-  const [statesGenerating, setStatesGenerating] = useState(false);  const [activeTab, setActiveTab] = useState<Tab>('basic');
+  const [statesGenerating, setStatesGenerating] = useState(false);
+  const [editingState, setEditingState] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<UpdateStatePayload>({});
+  const [stateSaving, setStateSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('basic');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
@@ -480,6 +489,34 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     return () => clearTimeout(timeout);
   }, [pairingSearch, id]);
 
+
+  // ── Publish / Unpublish ─────────────────────────────────────────
+  async function handlePublishToggle() {
+    if (!product) return;
+    const token = getToken();
+    if (!token) { router.push('/login'); return; }
+    setPublishLoading(true); setMessage(null);
+    try {
+      const updated = product.is_published
+        ? await unpublishProduct(token, product.id)
+        : await publishProduct(token, product.id);
+      setProduct(updated);
+      setMessage({
+        type: 'ok',
+        text: updated.is_published
+          ? '✅ Продукт опубликован в блоге!'
+          : '📝 Продукт снят с публикации (черновик)',
+      });
+    } catch (err) {
+      setMessage({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Ошибка публикации',
+      });
+    } finally {
+      setPublishLoading(false);
+    }
+  }
+
   // ── AI Autofill ──────────────────────────────────────────────────
   async function handleAiAutofill() {
     const token = getToken();
@@ -761,6 +798,20 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         >
           {aiLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
           {aiLoading ? 'AI думает...' : '🤖 AI Заполнить'}
+        </Button>
+        {/* Publish / Unpublish button */}
+        <Button
+          variant={product.is_published ? "outline" : "default"}
+          size="sm"
+          onClick={handlePublishToggle}
+          disabled={publishLoading || saving}
+          className={product.is_published
+            ? "rounded-xl border-green-300 text-green-700 bg-green-50 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:bg-green-950/30 dark:text-green-300 dark:border-green-800 shrink-0"
+            : "rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shrink-0"
+          }
+        >
+          {publishLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+          {product.is_published ? '✅ Опубликован' : '📢 Опубликовать'}
         </Button>
         {/* Product image thumbnail in header */}
         {product.image_url && (
@@ -1818,10 +1869,19 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   heat: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
                   preserved: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
                 };
+                const methodLabel: Record<string, string> = {
+                  raw: '🥬 сырой', boiled: '♨️ варка', steamed: '💨 пар',
+                  baked: '🍞 духовка', grilled: '🔥 гриль', pan_fried: '🍳 жарка',
+                  deep_fried: '🫕 фритюр', air_fried: '🌀 аэро', smoked: '🌫️ копч.',
+                  dried: '☀️ сушка', fermented: '🧪 ферм.', frozen: '🧊 замор.',
+                  pickled: '🥒 маринад',
+                };
                 const wc = s.weight_change_percent;
                 const wcColor = wc != null && wc < 0 ? 'text-red-500' : wc != null && wc > 0 ? 'text-green-600' : 'text-muted-foreground';
+                const isEditing = editingState === s.state;
+
                 return (
-                  <div key={s.state} className="glass rounded-2xl p-4 space-y-3">
+                  <div key={s.state} className={`glass rounded-2xl p-4 space-y-3 transition-all ${isEditing ? 'ring-2 ring-primary' : ''}`}>
                     {/* Card header */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1837,76 +1897,248 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                             {s.state_type}
                           </span>
                         )}
+                        {s.cooking_method && (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
+                            {methodLabel[s.cooking_method] || s.cooking_method}
+                          </span>
+                        )}
                         {s.data_score != null && (
                           <Badge variant={s.data_score >= 80 ? 'default' : 'secondary'} className="text-[10px] tabular-nums">
                             {s.data_score.toFixed(0)}%
                           </Badge>
                         )}
+                        {/* Edit button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={() => {
+                            if (isEditing) {
+                              setEditingState(null);
+                              setEditForm({});
+                            } else {
+                              setEditingState(s.state);
+                              setEditForm({
+                                calories_per_100g: s.calories_per_100g ?? undefined,
+                                protein_per_100g: s.protein_per_100g ?? undefined,
+                                fat_per_100g: s.fat_per_100g ?? undefined,
+                                carbs_per_100g: s.carbs_per_100g ?? undefined,
+                                fiber_per_100g: s.fiber_per_100g ?? undefined,
+                                water_percent: s.water_percent ?? undefined,
+                                glycemic_index: s.glycemic_index ?? undefined,
+                                weight_change_percent: s.weight_change_percent ?? undefined,
+                                oil_absorption_g: s.oil_absorption_g ?? undefined,
+                                water_loss_percent: s.water_loss_percent ?? undefined,
+                                shelf_life_hours: s.shelf_life_hours ?? undefined,
+                                storage_temp_c: s.storage_temp_c ?? undefined,
+                                texture: s.texture ?? undefined,
+                                notes_ru: s.notes_ru ?? undefined,
+                                notes_en: s.notes_en ?? undefined,
+                                notes_pl: s.notes_pl ?? undefined,
+                                notes_uk: s.notes_uk ?? undefined,
+                              });
+                            }
+                          }}
+                        >
+                          {isEditing ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                        </Button>
                       </div>
                     </div>
 
-                    {/* Macros row */}
-                    <div className="grid grid-cols-4 gap-2 text-center">
-                      {[
-                        { label: 'Ккал', value: s.calories_per_100g?.toFixed(0), bold: true },
-                        { label: 'Белки', value: s.protein_per_100g?.toFixed(1) },
-                        { label: 'Жиры', value: s.fat_per_100g?.toFixed(1) },
-                        { label: 'Угл.', value: s.carbs_per_100g?.toFixed(1) },
-                      ].map(({ label, value, bold }) => (
-                        <div key={label} className="bg-muted/30 rounded-xl py-1.5 px-1">
-                          <div className={`tabular-nums text-sm ${bold ? 'font-bold' : 'font-medium'}`}>{value ?? '—'}</div>
-                          <div className="text-[10px] text-muted-foreground">{label}</div>
+                    {/* === EDIT MODE === */}
+                    {isEditing ? (
+                      <div className="space-y-3">
+                        {/* Nutrition */}
+                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Нутриенты (на 100г)</div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {([
+                            ['calories_per_100g', 'Ккал'],
+                            ['protein_per_100g', 'Белки'],
+                            ['fat_per_100g', 'Жиры'],
+                            ['carbs_per_100g', 'Угл.'],
+                            ['fiber_per_100g', 'Клетч.'],
+                            ['water_percent', 'Вода %'],
+                          ] as const).map(([key, label]) => (
+                            <div key={key}>
+                              <label className="text-[10px] text-muted-foreground">{label}</label>
+                              <Input
+                                type="number"
+                                step="0.1"
+                                className="h-7 text-xs tabular-nums"
+                                value={editForm[key] ?? ''}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, [key]: e.target.value === '' ? undefined : Number(e.target.value) }))}
+                              />
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
 
-                    {/* Details row */}
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      {s.texture && (
-                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                          📋 {s.texture}
-                        </span>
-                      )}
-                      {wc != null && (
-                        <span className={`font-semibold px-2 py-0.5 rounded-lg bg-muted/40 ${wcColor}`}>
-                          ⚖️ {wc > 0 ? '+' : ''}{wc}%
-                        </span>
-                      )}
-                      {s.water_loss_percent != null && s.water_loss_percent > 0 && (
-                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                          💧 -{s.water_loss_percent}%
-                        </span>
-                      )}
-                      {s.oil_absorption_g != null && s.oil_absorption_g > 0 && (
-                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                          🫙 +{s.oil_absorption_g}г масла
-                        </span>
-                      )}
-                      {s.shelf_life_hours != null && (
-                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                          🕐 {s.shelf_life_hours >= 24 ? `${Math.round(s.shelf_life_hours / 24)}д` : `${s.shelf_life_hours}ч`}
-                        </span>
-                      )}
-                      {s.storage_temp_c != null && (
-                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                          🌡️ {s.storage_temp_c}°C
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Notes (collapsible) */}
-                    {(s.notes_ru || s.notes_en) && (
-                      <details className="group/notes">
-                        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                          📝 Заметки...
-                        </summary>
-                        <div className="mt-1.5 space-y-1 text-xs text-muted-foreground pl-2 border-l-2 border-border/40">
-                          {s.notes_ru && <p>🇷🇺 {s.notes_ru}</p>}
-                          {s.notes_en && <p>🇬🇧 {s.notes_en}</p>}
-                          {s.notes_pl && <p>🇵🇱 {s.notes_pl}</p>}
-                          {s.notes_uk && <p>🇺🇦 {s.notes_uk}</p>}
+                        {/* Cooking + GI */}
+                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Термообработка</div>
+                        <div className="grid grid-cols-4 gap-2">
+                          {([
+                            ['glycemic_index', 'GI'],
+                            ['weight_change_percent', '⚖️ Вес %'],
+                            ['water_loss_percent', '💧 Вода %'],
+                            ['oil_absorption_g', '🫙 Масло г'],
+                          ] as const).map(([key, label]) => (
+                            <div key={key}>
+                              <label className="text-[10px] text-muted-foreground">{label}</label>
+                              <Input
+                                type="number"
+                                step={key === 'glycemic_index' ? '1' : '0.1'}
+                                className="h-7 text-xs tabular-nums"
+                                value={editForm[key] ?? ''}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, [key]: e.target.value === '' ? undefined : Number(e.target.value) }))}
+                              />
+                            </div>
+                          ))}
                         </div>
-                      </details>
+
+                        {/* Storage */}
+                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Хранение</div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="text-[10px] text-muted-foreground">🕐 Срок (часы)</label>
+                            <Input type="number" className="h-7 text-xs tabular-nums" value={editForm.shelf_life_hours ?? ''} onChange={(e) => setEditForm(prev => ({ ...prev, shelf_life_hours: e.target.value === '' ? undefined : Number(e.target.value) }))} />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground">🌡️ Темп. °C</label>
+                            <Input type="number" className="h-7 text-xs tabular-nums" value={editForm.storage_temp_c ?? ''} onChange={(e) => setEditForm(prev => ({ ...prev, storage_temp_c: e.target.value === '' ? undefined : Number(e.target.value) }))} />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground">📋 Текстура</label>
+                            <Input type="text" className="h-7 text-xs" value={editForm.texture ?? ''} onChange={(e) => setEditForm(prev => ({ ...prev, texture: e.target.value || undefined }))} />
+                          </div>
+                        </div>
+
+                        {/* Notes */}
+                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Заметки</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            ['notes_ru', '🇷🇺 RU'],
+                            ['notes_en', '🇬🇧 EN'],
+                            ['notes_pl', '🇵🇱 PL'],
+                            ['notes_uk', '🇺🇦 UK'],
+                          ] as const).map(([key, label]) => (
+                            <div key={key}>
+                              <label className="text-[10px] text-muted-foreground">{label}</label>
+                              <textarea
+                                className="w-full h-14 text-xs rounded-lg border border-input bg-background px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                                value={(editForm as Record<string, unknown>)[key] as string ?? ''}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, [key]: e.target.value || undefined }))}
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Save / Cancel */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            disabled={stateSaving}
+                            className="rounded-xl"
+                            onClick={async () => {
+                              const token = getToken();
+                              if (!token || !product) return;
+                              setStateSaving(true);
+                              setMessage(null);
+                              try {
+                                await updateProductState(token, product.id, s.state, editForm);
+                                setMessage({ type: 'ok', text: `✅ ${s.state} обновлён` });
+                                // Refresh states
+                                if (product.slug) {
+                                  const updated = await getProductStates(product.slug);
+                                  setStatesData(updated);
+                                }
+                                setEditingState(null);
+                                setEditForm({});
+                              } catch (e) {
+                                setMessage({ type: 'err', text: `❌ ${e instanceof Error ? e.message : 'Error'}` });
+                              } finally {
+                                setStateSaving(false);
+                              }
+                            }}
+                          >
+                            {stateSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                            Сохранить
+                          </Button>
+                          <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => { setEditingState(null); setEditForm({}); }}>
+                            Отмена
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* === VIEW MODE (original display) === */}
+                        {/* Macros row */}
+                        <div className="grid grid-cols-4 gap-2 text-center">
+                          {[
+                            { label: 'Ккал', value: s.calories_per_100g?.toFixed(0), bold: true },
+                            { label: 'Белки', value: s.protein_per_100g?.toFixed(1) },
+                            { label: 'Жиры', value: s.fat_per_100g?.toFixed(1) },
+                            { label: 'Угл.', value: s.carbs_per_100g?.toFixed(1) },
+                          ].map(({ label, value, bold }) => (
+                            <div key={label} className="bg-muted/30 rounded-xl py-1.5 px-1">
+                              <div className={`tabular-nums text-sm ${bold ? 'font-bold' : 'font-medium'}`}>{value ?? '—'}</div>
+                              <div className="text-[10px] text-muted-foreground">{label}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Details row */}
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {s.texture && (
+                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                              📋 {s.texture}
+                            </span>
+                          )}
+                          {wc != null && (
+                            <span className={`font-semibold px-2 py-0.5 rounded-lg bg-muted/40 ${wcColor}`}>
+                              ⚖️ {wc > 0 ? '+' : ''}{wc}%
+                            </span>
+                          )}
+                          {s.water_loss_percent != null && s.water_loss_percent > 0 && (
+                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                              💧 -{s.water_loss_percent}%
+                            </span>
+                          )}
+                          {s.oil_absorption_g != null && s.oil_absorption_g > 0 && (
+                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                              🫙 +{s.oil_absorption_g}г масла
+                            </span>
+                          )}
+                          {s.shelf_life_hours != null && (
+                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                              🕐 {s.shelf_life_hours >= 24 ? `${Math.round(s.shelf_life_hours / 24)}д` : `${s.shelf_life_hours}ч`}
+                            </span>
+                          )}
+                          {s.storage_temp_c != null && (
+                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                              🌡️ {s.storage_temp_c}°C
+                            </span>
+                          )}
+                          {s.glycemic_index != null && (
+                            <span className={`font-semibold px-2 py-0.5 rounded-lg bg-muted/40 ${s.glycemic_index <= 55 ? 'text-green-600' : s.glycemic_index <= 69 ? 'text-yellow-600' : 'text-red-500'}`}>
+                              📊 GI {s.glycemic_index}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Notes (collapsible) */}
+                        {(s.notes_ru || s.notes_en) && (
+                          <details className="group/notes">
+                            <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+                              📝 Заметки...
+                            </summary>
+                            <div className="mt-1.5 space-y-1 text-xs text-muted-foreground pl-2 border-l-2 border-border/40">
+                              {s.notes_ru && <p>🇷🇺 {s.notes_ru}</p>}
+                              {s.notes_en && <p>🇬🇧 {s.notes_en}</p>}
+                              {s.notes_pl && <p>🇵🇱 {s.notes_pl}</p>}
+                              {s.notes_uk && <p>🇺🇦 {s.notes_uk}</p>}
+                            </div>
+                          </details>
+                        )}
+                      </>
                     )}
                   </div>
                 );
