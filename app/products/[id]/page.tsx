@@ -1170,8 +1170,29 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   <SelectTrigger className="rounded-xl"><SelectValue placeholder="Выберите тип" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">— не выбрано —</SelectItem>
-                    {['fish', 'seafood', 'meat', 'vegetable', 'fruit', 'dairy', 'grain', 'spice', 'oil', 'beverage', 'other'].map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    {[
+                      { value: 'fish', label: '🐟 Рыба' },
+                      { value: 'seafood', label: '🦐 Морепродукты' },
+                      { value: 'meat', label: '🥩 Мясо' },
+                      { value: 'vegetable', label: '🥦 Овощи' },
+                      { value: 'fruit', label: '🍎 Фрукты' },
+                      { value: 'dairy', label: '🧀 Молочные' },
+                      { value: 'egg', label: '🥚 Яйца' },
+                      { value: 'grain', label: '🌾 Зерновые' },
+                      { value: 'legume', label: '🫘 Бобовые' },
+                      { value: 'nut', label: '🥜 Орехи' },
+                      { value: 'mushroom', label: '🍄 Грибы' },
+                      { value: 'spice', label: '🌶 Специи' },
+                      { value: 'herb', label: '🌿 Травы' },
+                      { value: 'oil', label: '🫒 Масла' },
+                      { value: 'sauce', label: '🥫 Соусы' },
+                      { value: 'beverage', label: '🥤 Напитки' },
+                      { value: 'sweetener', label: '🍯 Подсластители' },
+                      { value: 'pasta', label: '🍝 Паста' },
+                      { value: 'bread', label: '🍞 Хлеб' },
+                      { value: 'other', label: '📦 Другое' },
+                    ].map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
