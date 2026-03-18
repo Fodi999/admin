@@ -1035,7 +1035,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   <Label className="text-xs text-muted-foreground">{label}</Label>
                   <Input
                     type="number" step="0.1" min="0" className="rounded-xl tabular-nums"
-                    value={macros[key] ?? ''}
+                    value={macros[key] != null ? Number(Number(macros[key]).toFixed(2)) : ''}
                     onChange={(e) => setMacros((prev) => ({ ...prev, [key]: e.target.value ? parseFloat(e.target.value) : null }))}
                     placeholder="—"
                   />
@@ -1059,7 +1059,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   <Label className="text-xs text-muted-foreground">{label}</Label>
                   <Input
                     type="number" step="0.1" min="0" className="rounded-xl tabular-nums"
-                    value={(nutritionBasic[key] as number | undefined) ?? ''}
+                    value={(nutritionBasic[key] as number | undefined) != null ? Number(Number(nutritionBasic[key] as number).toFixed(2)) : ''}
                     onChange={(e) => setNutritionBasic((prev) => ({ ...prev, [key]: e.target.value ? parseFloat(e.target.value) : undefined }))}
                     placeholder="—"
                   />
