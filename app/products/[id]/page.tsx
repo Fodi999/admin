@@ -196,6 +196,25 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       .finally(() => setLoading(false));
   }, [id]);
 
+  /** Reload product + nutrition from server — call after any save */
+  async function reloadProduct() {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const [p, nutr] = await Promise.all([
+        getProduct(token, id),
+        nutritionGetProduct(token, id).catch(() => null),
+      ]);
+      const cached = bustImageCache(p);
+      setProduct(cached);
+      resetForm(cached);
+      if (nutr) {
+        setNutrition(nutr);
+        resetNutritionForms(nutr);
+      }
+    } catch { /* silent */ }
+  }
+
   function resetForm(p: Product) {
     setForm({
       name_en: p.name_en,
@@ -277,6 +296,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       const cached = bustImageCache(updated);
       setProduct(cached);
       resetForm(cached);
+      await reloadProduct();
       setMessage({ type: 'ok', text: '✅ Основные данные сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
@@ -304,6 +324,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     setSaving(true); setMessage(null);
     try {
       await nutritionUpdateMacros(token, id, macros);
+      await reloadProduct();
       setMessage({ type: 'ok', text: '✅ Нутриенты сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
@@ -319,6 +340,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         nutritionUpdateAllergens(token, id, allergens),
         nutritionUpdateDietFlags(token, id, dietFlags),
       ]);
+      await reloadProduct();
       setMessage({ type: 'ok', text: '✅ Аллергены и диет-флаги сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
@@ -334,6 +356,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         nutritionUpdateCulinary(token, id, culinary),
         nutritionUpdateBasic(token, id, nutritionBasic),
       ]);
+      await reloadProduct();
       setMessage({ type: 'ok', text: '✅ Кулинарные данные сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
@@ -346,6 +369,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     setSaving(true); setMessage(null);
     try {
       await nutritionUpdateBasic(token, id, { availability_months: nutritionBasic.availability_months });
+      await reloadProduct();
       setMessage({ type: 'ok', text: '✅ Сезонность сохранена!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
@@ -362,6 +386,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         nutritionUpdateMinerals(token, id, minerals),
         nutritionUpdateFattyAcids(token, id, fattyAcids),
       ]);
+      await reloadProduct();
       setMessage({ type: 'ok', text: '✅ Витамины и минералы сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
@@ -374,6 +399,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     setSaving(true); setMessage(null);
     try {
       await nutritionUpdateFoodProperties(token, id, foodProps);
+      await reloadProduct();
       setMessage({ type: 'ok', text: '✅ Физические свойства сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
