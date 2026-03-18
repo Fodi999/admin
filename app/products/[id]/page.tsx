@@ -1200,8 +1200,9 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   <SelectContent>
                     <SelectItem value="__none__">— не указано —</SelectItem>
                     <SelectItem value="freshwater">💧 Пресная</SelectItem>
-                    <SelectItem value="saltwater">🌊 Морская</SelectItem>
+                    <SelectItem value="sea">🌊 Морская</SelectItem>
                     <SelectItem value="brackish">🏞 Солоноватая</SelectItem>
+                    <SelectItem value="both">🔄 Оба типа</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
