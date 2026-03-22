@@ -61,6 +61,7 @@ import {
   Layers,
   List,
   MonitorSmartphone,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -609,8 +610,8 @@ export default function SeoPage() {
       {showDetail && token && (
         <DetailDialog page={showDetail} token={token} onClose={() => setShowDetail(null)} onSaved={() => { setShowDetail(null); refresh(); }} />
       )}
-      {showPreview && (
-        <PreviewDialog page={showPreview} onClose={() => setShowPreview(null)} />
+      {showPreview && token && (
+        <PreviewDialog page={showPreview} token={token} onClose={() => setShowPreview(null)} onPublished={() => { setShowPreview(null); refresh(); }} />
       )}
     </div>
   );
@@ -1215,12 +1216,17 @@ function seoAnalysis(page: IntentPage): {
   if (!genericSlug && slug.length > 10) seo += 10; else if (!genericSlug) seo += 5;
 
   // 3. Title contains entity keyword (10 pts)
-  const titleHasKeyword = titleLow.includes(entityA) || titleLow.includes(entityASlug);
+  // For non-EN locales, entityA is English ("artichoke") but title is in locale ("артишок").
+  // We can't match without a translation dictionary, so auto-pass non-EN locales.
+  const isEnLocale = page.locale === "en";
+  const titleHasKeyword = isEnLocale
+    ? titleLow.includes(entityA) || titleLow.includes(entityASlug)
+    : true; // non-EN: assume AI placed the translated keyword
   if (titleHasKeyword) seo += 10;
 
   // 4. Intent match: question → title should be a question (10 pts)
   const isQuestion = page.intent_type === "question";
-  const titleIsQuestion = /\?/.test(page.title) || /^(is|are|can|does|do|how|what|why|when|полезен|можно|стоит|как|чем|что)/i.test(page.title.trim());
+  const titleIsQuestion = /\?/.test(page.title) || /^(is|are|can|does|do|how|what|why|when|полезен|можно|стоит|как|чем|что|czy|jak|co|ile|dlaczego|kiedy|чи|як|що|скільки|чому|коли)/i.test(page.title.trim());
   if (!isQuestion) seo += 10; // non-question intents always pass
   else if (titleIsQuestion) seo += 10; else seo += 3;
 
@@ -1274,8 +1280,8 @@ function seoAnalysis(page: IntentPage): {
     {
       id: "title-keyword",
       status: titleHasKeyword ? "ok" : "warn",
-      label: `Ключ в title: "${entityA}"`,
-      hint: titleHasKeyword ? "✅ Ключевое слово в заголовке" : `⚠ Нет "${entityA}" в заголовке — добавить`,
+      label: isEnLocale ? `Ключ в title: "${entityA}"` : `Ключ в title (${page.locale})`,
+      hint: !isEnLocale ? "✅ Non-EN — проверка невозможна без словаря" : titleHasKeyword ? "✅ Ключевое слово в заголовке" : `⚠ Нет "${entityA}" в заголовке — добавить`,
     },
     {
       id: "intent-match",
@@ -1310,10 +1316,10 @@ function SeoScoreBadge({ page }: { page: IntentPage }) {
   );
 }
 
-function PreviewDialog({ page, onClose }: { page: IntentPage; onClose: () => void }) {
-  // Real blog URL: /[locale]/chef-tools/seo/[slug]
+function PreviewDialog({ page, token, onClose, onPublished }: { page: IntentPage; token: string; onClose: () => void; onPublished: () => void }) {
   const realUrl = `https://dima-fomin.pl/${page.locale}/chef-tools/seo/${page.slug}`;
   const [urlStatus, setUrlStatus] = useState<"idle" | "checking" | "ok" | "404" | "err">("idle");
+  const [publishing, setPublishing] = useState(false);
 
   const { uiScore, seoScore: seoSc, total, grade, color, checks } = seoAnalysis(page);
 
@@ -1328,98 +1334,180 @@ function PreviewDialog({ page, onClose }: { page: IntentPage; onClose: () => voi
     }
   };
 
+  const gradeBg = grade === "A+" ? "bg-emerald-500" : grade === "A" ? "bg-emerald-500" : grade === "B" ? "bg-amber-500" : "bg-red-500";
+  const okCount = checks.filter(c => c.status === "ok").length;
+
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <MonitorSmartphone className="w-5 h-5" /> SEO Preview
-            <span className={`ml-auto text-lg font-bold ${color}`}>{grade} ({total}/100)</span>
-          </DialogTitle>
+      <DialogContent
+        showCloseButton={false}
+        className="w-[600px] max-w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto p-0 gap-0"
+      >
+        {/* Accessible title for screen readers (visually hidden) */}
+        <DialogHeader className="sr-only">
+          <DialogTitle>SEO Preview — {page.title}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5">
-          {/* Real URL */}
-          <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2 text-xs font-mono">
-            <span className="text-muted-foreground shrink-0">URL:</span>
-            <span className="truncate flex-1 text-foreground">{realUrl}</span>
-            <button
-              onClick={checkUrl}
-              className="shrink-0 text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 border transition-colors"
-            >
-              {urlStatus === "checking" ? "..." : "Check"}
-            </button>
-            {urlStatus === "ok" && <span className="text-emerald-600 font-bold shrink-0">200 ✅</span>}
-            {urlStatus === "404" && <span className="text-red-500 font-bold shrink-0">404 ❌</span>}
-            {urlStatus === "err" && <span className="text-amber-500 font-bold shrink-0">ERR ⚠</span>}
+        {/* ── Header with grade badge ── */}
+        <div className={`${gradeBg} px-6 py-4 flex items-center gap-3 rounded-t-lg relative`}>
+          {/* Custom close button on colored header */}
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 rounded-full bg-white/20 hover:bg-white/30 p-1 transition-colors"
+          >
+            <X className="w-4 h-4 text-white" />
+          </button>
+          <div className="bg-white/20 backdrop-blur rounded-xl w-14 h-14 flex items-center justify-center">
+            <span className="text-white text-2xl font-black">{grade}</span>
           </div>
-
-          {/* Google SERP mock */}
-          <div className="bg-white dark:bg-zinc-900 rounded-xl p-5 border space-y-1">
-            <div className="text-xs text-emerald-700 dark:text-emerald-400 truncate">
-              dima-fomin.pl › {page.locale} › chef-tools › seo › <strong>{page.slug}</strong>
-            </div>
-            <h3 className="text-[#1a0dab] dark:text-blue-400 text-[18px] font-normal hover:underline cursor-pointer leading-snug">
-              {page.title}
-            </h3>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-2 leading-relaxed">
-              {page.description}
-            </p>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-white font-semibold text-lg leading-tight truncate">SEO Preview</h2>
+            <p className="text-white/80 text-sm">{total}/100 очков · {page.locale.toUpperCase()} · {page.intent_type}</p>
           </div>
-
-          {/* Two-score bars */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5 bg-muted/30 rounded-lg p-3">
-              <div className="flex justify-between text-xs font-semibold">
-                <span>UI Score</span>
-                <span className={uiScore >= 38 ? "text-emerald-600" : uiScore >= 25 ? "text-amber-600" : "text-red-500"}>
-                  {uiScore}/50
-                </span>
-              </div>
-              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${uiScore >= 38 ? "bg-emerald-500" : uiScore >= 25 ? "bg-amber-500" : "bg-red-500"}`}
-                  style={{ width: `${(uiScore / 50) * 100}%` }}
-                />
-              </div>
-              <div className="text-[10px] text-muted-foreground">Title · Description · Контент · FAQ</div>
+          <div className="flex gap-1">
+            <div className="bg-white/20 backdrop-blur rounded-lg px-2.5 py-1 text-center">
+              <div className="text-white text-xs font-medium opacity-80">UI</div>
+              <div className="text-white text-sm font-bold">{uiScore}/50</div>
             </div>
-            <div className="space-y-1.5 bg-muted/30 rounded-lg p-3">
-              <div className="flex justify-between text-xs font-semibold">
-                <span>SEO Score</span>
-                <span className={seoSc >= 38 ? "text-emerald-600" : seoSc >= 25 ? "text-amber-600" : "text-red-500"}>
-                  {seoSc}/50
-                </span>
-              </div>
-              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${seoSc >= 38 ? "bg-emerald-500" : seoSc >= 25 ? "bg-amber-500" : "bg-red-500"}`}
-                  style={{ width: `${(seoSc / 50) * 100}%` }}
-                />
-              </div>
-              <div className="text-[10px] text-muted-foreground">Slug · Keyword · Intent · CTA</div>
+            <div className="bg-white/20 backdrop-blur rounded-lg px-2.5 py-1 text-center">
+              <div className="text-white text-xs font-medium opacity-80">SEO</div>
+              <div className="text-white text-sm font-bold">{seoSc}/50</div>
             </div>
           </div>
+        </div>
 
-          {/* Audit checks */}
-          <div className="space-y-2">
-            <h4 className="text-sm font-semibold">SEO аудит ({checks.filter(c => c.status === "ok").length}/{checks.length} ✅)</h4>
-            <div className="grid gap-1.5">
-              {checks.map(c => (
-                <SeoCheck key={c.id} ok={c.status === "ok"} warn={c.status === "warn"} label={c.label} hint={c.hint} />
-              ))}
+        <div className="px-6 py-5 space-y-5">
+          {/* ── URL + status check ── */}
+          <div className="rounded-lg border overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-muted/50">
+              <Globe className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="text-xs font-mono truncate flex-1 text-foreground select-all">{realUrl}</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 text-[11px] px-2 shrink-0"
+                onClick={checkUrl}
+                disabled={urlStatus === "checking"}
+              >
+                {urlStatus === "checking" ? "Проверяю…" : "Проверить URL"}
+              </Button>
+            </div>
+            {urlStatus !== "idle" && urlStatus !== "checking" && (
+              <div className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 ${
+                urlStatus === "ok" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                  : urlStatus === "404" ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400"
+                  : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+              }`}>
+                {urlStatus === "ok" && <><CheckCircle2 className="w-3.5 h-3.5" /> Страница доступна (200)</>}
+                {urlStatus === "404" && <><AlertCircle className="w-3.5 h-3.5" /> Страница не найдена (404)</>}
+                {urlStatus === "err" && <><AlertTriangle className="w-3.5 h-3.5" /> Ошибка при проверке</>}
+              </div>
+            )}
+          </div>
+
+          {/* ── Google SERP mock ── */}
+          <div>
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Предпросмотр в Google</h4>
+            <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border shadow-sm space-y-0.5">
+              <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                <img src="https://www.google.com/s2/favicons?domain=dima-fomin.pl&sz=16" alt="" className="w-4 h-4 rounded-full" />
+                <span>dima-fomin.pl</span>
+                <span className="text-zinc-400">›</span>
+                <span>{page.locale}</span>
+                <span className="text-zinc-400">›</span>
+                <span>chef-tools</span>
+                <span className="text-zinc-400">›</span>
+                <span className="truncate">{page.slug}</span>
+              </div>
+              <h3 className="text-[#1a0dab] dark:text-blue-400 text-lg font-normal leading-snug cursor-pointer hover:underline">
+                {page.title}
+              </h3>
+              <p className="text-[13px] text-zinc-600 dark:text-zinc-400 leading-relaxed line-clamp-2">
+                {page.description}
+              </p>
             </div>
           </div>
 
-          {/* FAQ Schema preview */}
+          {/* ── Score progress bars ── */}
+          <div>
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Оценки</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-xs font-semibold">UI Score</span>
+                  <span className={`text-sm font-bold ${uiScore >= 38 ? "text-emerald-600" : uiScore >= 25 ? "text-amber-600" : "text-red-500"}`}>
+                    {uiScore}<span className="text-muted-foreground font-normal">/50</span>
+                  </span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${uiScore >= 38 ? "bg-emerald-500" : uiScore >= 25 ? "bg-amber-500" : "bg-red-500"}`}
+                    style={{ width: `${(uiScore / 50) * 100}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground">Title · Description · Контент · FAQ</p>
+              </div>
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-xs font-semibold">SEO Score</span>
+                  <span className={`text-sm font-bold ${seoSc >= 38 ? "text-emerald-600" : seoSc >= 25 ? "text-amber-600" : "text-red-500"}`}>
+                    {seoSc}<span className="text-muted-foreground font-normal">/50</span>
+                  </span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${seoSc >= 38 ? "bg-emerald-500" : seoSc >= 25 ? "bg-amber-500" : "bg-red-500"}`}
+                    style={{ width: `${(seoSc / 50) * 100}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground">Slug · Keyword · Intent · CTA</p>
+              </div>
+            </div>
+          </div>
+
+          {/* ── SEO audit checklist ── */}
+          <div>
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              SEO аудит — {okCount}/{checks.length} пройдено
+            </h4>
+            <div className="rounded-lg border overflow-hidden divide-y">
+              {checks.map(c => {
+                const isOk = c.status === "ok";
+                const isWarn = c.status === "warn";
+                return (
+                  <div key={c.id} className="flex items-start gap-2.5 px-3 py-2.5">
+                    <div className="pt-0.5 shrink-0">
+                      {isOk ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      ) : isWarn ? (
+                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-red-500" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium leading-tight">{c.label}</div>
+                      <div className={`text-xs mt-0.5 ${isOk ? "text-emerald-600" : isWarn ? "text-amber-600" : "text-red-600"}`}>
+                        {c.hint}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── FAQ Schema preview ── */}
           {page.faq && page.faq.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-sm font-semibold">FAQ Schema (Rich Snippets)</h4>
-              <div className="bg-muted/30 rounded-lg p-3 space-y-2 text-sm max-h-[180px] overflow-y-auto">
+            <div>
+              <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                FAQ Schema · Rich Snippets ({page.faq.length})
+              </h4>
+              <div className="rounded-lg border divide-y max-h-[200px] overflow-y-auto">
                 {page.faq.map((f, i) => (
-                  <div key={i}>
-                    <div className="font-medium text-[#1a0dab] dark:text-blue-400">{f.question}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{f.answer}</div>
+                  <div key={i} className="px-3 py-2.5">
+                    <div className="text-sm font-medium text-[#1a0dab] dark:text-blue-400">{f.question}</div>
+                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{f.answer}</div>
                   </div>
                 ))}
               </div>
@@ -1427,33 +1515,49 @@ function PreviewDialog({ page, onClose }: { page: IntentPage; onClose: () => voi
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Закрыть</Button>
-          <Button asChild variant="outline">
-            <a href={realUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="w-4 h-4 mr-2" /> Открыть страницу
-            </a>
-          </Button>
-        </DialogFooter>
+        {/* ── Footer ── */}
+        <div className="px-6 py-4 border-t bg-muted/30 space-y-3">
+          {page.status !== "published" && (
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 rounded-lg px-3 py-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              Страница в статусе «{page.status}» — URL вернёт 404 пока не опубликована
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>Закрыть</Button>
+            {page.status === "published" ? (
+              <Button asChild>
+                <a href={realUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="w-4 h-4 mr-2" /> Открыть страницу
+                </a>
+              </Button>
+            ) : (
+              <Button
+                onClick={async () => {
+                  setPublishing(true);
+                  try {
+                    await publishIntentPage(token, page.id);
+                    toast.success("Опубликовано! Страница доступна по URL.");
+                    onPublished();
+                  } catch (err) {
+                    toast.error(String(err));
+                  } finally {
+                    setPublishing(false);
+                  }
+                }}
+                disabled={publishing}
+              >
+                {publishing ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Публикуем…</>
+                ) : (
+                  <><Rocket className="w-4 h-4 mr-2" /> Опубликовать</>
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function SeoCheck({ ok, warn, label, hint }: { ok: boolean; warn?: boolean; label: string; hint: string }) {
-  const state = ok ? "ok" : warn ? "warn" : "err";
-  return (
-    <div className={`flex items-center gap-2 text-sm p-2 rounded-lg ${state === "ok" ? "bg-emerald-500/10" : state === "warn" ? "bg-amber-500/10" : "bg-red-500/10"}`}>
-      {state === "ok" ? (
-        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-      ) : state === "warn" ? (
-        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-      ) : (
-        <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-      )}
-      <span className="font-medium">{label}</span>
-      <span className="text-xs text-muted-foreground ml-auto">{hint}</span>
-    </div>
   );
 }
 
