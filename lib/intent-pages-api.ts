@@ -315,6 +315,24 @@ export async function deleteIntentPage(token: string, id: string): Promise<void>
   if (!res.ok) throw new Error('Failed to delete intent page');
 }
 
+/** POST /api/admin/intent-pages/:id/regenerate
+ * Clears AI cache + deletes page + generates fresh with latest prompt.
+ */
+export async function regenerateIntentPage(
+  token: string,
+  id: string,
+): Promise<IntentPage> {
+  const res = await fetch(`${IP}/${id}/regenerate`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Regenerate failed: ${text}`);
+  }
+  return res.json();
+}
+
 /** POST /api/admin/intent-pages/publish-bulk */
 export async function publishBulk(
   token: string,

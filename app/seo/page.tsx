@@ -21,6 +21,7 @@ import {
   runScheduler,
   deleteIntentPage,
   updateIntentPage,
+  regenerateIntentPage,
   findDuplicates,
   cleanupSlugs,
   setGoogleDiscovered,
@@ -1850,17 +1851,11 @@ function DetailDialog({ page: initialPage, token, onClose, onSaved }: {
   const imageBlocks = blocks.filter((b): b is ContentBlock & { type: "image" } => b.type === "image");
 
   const handleRegenerate = async () => {
-    if (!confirm("Удалить текущий контент и сгенерировать заново через AI?")) return;
+    if (!confirm("Очистить AI-кеш и сгенерировать заново? Все фото будут удалены.")) return;
     setRegenerating(true);
     try {
-      await deleteIntentPage(token, page.id);
-      await generateIntentPage(token, {
-        intent_type: page.intent_type,
-        entity_a: page.entity_a,
-        entity_b: page.entity_b ?? undefined,
-        locale: page.locale,
-      });
-      toast.success("Страница перегенерирована");
+      await regenerateIntentPage(token, page.id);
+      toast.success("Страница перегенерирована с новой структурой (16 блоков + 4 фото)");
       onSaved();
     } catch (err) {
       toast.error("Ошибка перегенерации: " + String(err));
