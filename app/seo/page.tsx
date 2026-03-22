@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getToken } from "@/lib/auth";
 import {
@@ -24,12 +24,14 @@ import {
   findDuplicates,
   cleanupSlugs,
   setGoogleDiscovered,
+  uploadImageToR2,
   type IntentPage,
   type IntentPageStats,
   type IntentPageSettings,
   type BatchResult,
   type SchedulerResult,
   type DuplicateGroup,
+  type ContentBlock,
 } from "@/lib/intent-pages-api";
 
 import {
@@ -62,6 +64,9 @@ import {
   List,
   MonitorSmartphone,
   X,
+  ImageIcon,
+  Upload,
+  Trash,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +96,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { IngredientAutocomplete } from "@/components/ingredient-autocomplete";
 
@@ -1726,12 +1737,107 @@ function SettingsDialog({ token, settings, onClose, onSaved }: {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// ДИАЛОГ ПРОСМОТРА / РЕДАКТИРОВАНИЯ
+// ПАНЕЛЬ ПРОСМОТРА / РЕДАКТИРОВАНИЯ (Sheet)
 // ══════════════════════════════════════════════════════════════════
 
-function DetailDialog({ page, token, onClose, onSaved }: {
+const IMAGE_KEY_LABELS: Record<string, string> = {
+  hero: "🖼 Hero — главное фото",
+  benefits: "💚 Benefits — польза",
+  nutrition: "📊 Nutrition — калории",
+  cooking: "🍳 Cooking — приготовление",
+};
+
+function ImageUploadSlot({ pageId, imageKey, src, alt, token, onUploaded }: {
+  pageId: string; imageKey: string; src?: string; alt: string;
+  token: string; onUploaded: (updated: IntentPage) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState<string | null>(src || null);
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    try {
+      const localUrl = URL.createObjectURL(file);
+      setPreview(localUrl);
+      const updated = await uploadImageToR2(token, pageId, imageKey, file);
+      onUploaded(updated);
+      toast.success(`Фото "${IMAGE_KEY_LABELS[imageKey] || imageKey}" загружено`);
+    } catch (err) {
+      toast.error("Ошибка загрузки: " + String(err));
+      setPreview(src || null);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("image/")) handleFile(file);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <span>{IMAGE_KEY_LABELS[imageKey] || imageKey}</span>
+        {preview && <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-600 text-[10px]">✓</Badge>}
+      </div>
+      <div
+        className={`relative group border-2 border-dashed rounded-xl overflow-hidden transition-colors cursor-pointer
+          ${preview ? "border-emerald-300 dark:border-emerald-700" : "border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500"}`}
+        style={{ aspectRatio: imageKey === "hero" ? "16/9" : "4/3" }}
+        onClick={() => inputRef.current?.click()}
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+      >
+        {preview ? (
+          <>
+            <img src={preview} alt={alt} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <div className="text-white text-sm font-medium flex items-center gap-2">
+                <Upload className="w-4 h-4" /> Заменить
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground p-4">
+            {uploading ? (
+              <Loader2 className="w-8 h-8 animate-spin" />
+            ) : (
+              <>
+                <ImageIcon className="w-8 h-8" />
+                <span className="text-xs text-center">Перетащите или нажмите</span>
+              </>
+            )}
+          </div>
+        )}
+        {uploading && preview && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 text-white animate-spin" />
+          </div>
+        )}
+      </div>
+      <p className="text-[11px] text-muted-foreground line-clamp-2">alt: {alt}</p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+          e.target.value = "";
+        }}
+      />
+    </div>
+  );
+}
+
+function DetailDialog({ page: initialPage, token, onClose, onSaved }: {
   page: IntentPage; token: string; onClose: () => void; onSaved: () => void;
 }) {
+  const [page, setPage] = useState(initialPage);
   const [title, setTitle] = useState(page.title);
   const [description, setDescription] = useState(page.description);
   const [answer, setAnswer] = useState(page.answer);
@@ -1739,6 +1845,9 @@ function DetailDialog({ page, token, onClose, onSaved }: {
   const [priority, setPriority] = useState(String(page.priority));
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+
+  const blocks: ContentBlock[] = Array.isArray(page.content_blocks) ? page.content_blocks : [];
+  const imageBlocks = blocks.filter((b): b is ContentBlock & { type: "image" } => b.type === "image");
 
   const handleRegenerate = async () => {
     if (!confirm("Удалить текущий контент и сгенерировать заново через AI?")) return;
@@ -1773,56 +1882,165 @@ function DetailDialog({ page, token, onClose, onSaved }: {
     }
   };
 
+  const handleImageUploaded = (updated: IntentPage) => {
+    setPage(updated);
+  };
+
+  const uploadedCount = imageBlocks.filter(b => "src" in b && b.src).length;
+  const totalImages = imageBlocks.length;
+
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FileText className="w-5 h-5" />
-            {page.entity_a}
-            <Badge variant="secondary" className={STATUS_CONFIG[page.status]?.color}>{STATUS_CONFIG[page.status]?.label}</Badge>
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label>Заголовок <span className={title.length >= 50 && title.length <= 60 ? "text-emerald-600" : title.length >= 40 ? "text-amber-600" : "text-red-500"}>({title.length}/60, цель 50-60)</span></Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </div>
-          <div>
-            <Label>Описание <span className={description.length >= 120 && description.length <= 155 ? "text-emerald-600" : description.length >= 100 ? "text-amber-600" : "text-red-500"}>({description.length}/155, цель 120-155)</span></Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Slug</Label>
-              <Input value={slug} onChange={(e) => setSlug(e.target.value)} className="font-mono text-sm" />
-            </div>
-            <div>
-              <Label>Приоритет</Label>
-              <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">🔵 Низкий</SelectItem>
-                  <SelectItem value="1">⚪ Обычный</SelectItem>
-                  <SelectItem value="2">🔴 Высокий</SelectItem>
-                </SelectContent>
-              </Select>
+    <Sheet open onOpenChange={onClose}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto p-0">
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-background border-b px-6 py-4">
+          <SheetHeader className="p-0">
+            <SheetTitle className="flex items-center gap-2 text-lg">
+              <FileText className="w-5 h-5" />
+              {page.entity_a}
+              <Badge variant="secondary" className={STATUS_CONFIG[page.status]?.color}>{STATUS_CONFIG[page.status]?.label}</Badge>
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex items-center gap-2 mt-3">
+            <Button onClick={handleSave} disabled={saving || regenerating} size="sm">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              Сохранить
+            </Button>
+            <Button variant="outline" size="sm" onClick={onClose}>Отмена</Button>
+            <div className="ml-auto">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRegenerate}
+                disabled={regenerating || saving}
+                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+              >
+                {regenerating ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+                Перегенерировать
+              </Button>
             </div>
           </div>
+        </div>
+
+        <div className="px-6 py-5 space-y-6">
+          {/* ── SEO-мета ── */}
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">SEO Мета</h3>
+            <div>
+              <Label>Заголовок <span className={title.length >= 50 && title.length <= 60 ? "text-emerald-600" : title.length >= 40 ? "text-amber-600" : "text-red-500"}>({title.length}/60)</span></Label>
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div>
+              <Label>Описание <span className={description.length >= 120 && description.length <= 155 ? "text-emerald-600" : description.length >= 100 ? "text-amber-600" : "text-red-500"}>({description.length}/155)</span></Label>
+              <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Slug</Label>
+                <Input value={slug} onChange={(e) => setSlug(e.target.value)} className="font-mono text-sm" />
+              </div>
+              <div>
+                <Label>Приоритет</Label>
+                <Select value={priority} onValueChange={setPriority}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">🔵 Низкий</SelectItem>
+                    <SelectItem value="1">⚪ Обычный</SelectItem>
+                    <SelectItem value="2">🔴 Высокий</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </section>
+
           <Separator />
-          <div>
-            <Label>Ответ <span className={answer.length >= 400 && answer.length <= 800 ? "text-emerald-600" : answer.length >= 200 ? "text-amber-600" : "text-red-500"}>({answer.length} симв, цель 400-800)</span></Label>
-            <textarea
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              className="mt-1 w-full text-sm bg-muted/30 rounded-lg p-3 min-h-[120px] max-h-[250px] border resize-y"
-              placeholder="Ответ на вопрос пользователя (4-6 предложений, 400-800 символов)..."
-            />
-          </div>
-          {page.faq && page.faq.length > 0 && (
+
+          {/* ── Ответ ── */}
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Контент</h3>
             <div>
-              <Label className="text-xs text-muted-foreground">FAQ ({page.faq.length})</Label>
-              <div className="mt-1 space-y-2">
+              <Label>Ответ <span className={answer.length >= 400 && answer.length <= 800 ? "text-emerald-600" : answer.length >= 200 ? "text-amber-600" : "text-red-500"}>({answer.length} симв)</span></Label>
+              <textarea
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                className="mt-1 w-full text-sm bg-muted/30 rounded-lg p-3 min-h-[120px] max-h-[250px] border resize-y"
+                placeholder="Ответ на вопрос пользователя (4-6 предложений, 400-800 символов)..."
+              />
+            </div>
+          </section>
+
+          <Separator />
+
+          {/* ── Фото для статьи ── */}
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Фото для статьи</h3>
+              <Badge variant="secondary" className={uploadedCount === totalImages && totalImages > 0 ? "bg-emerald-500/15 text-emerald-600" : "bg-amber-500/15 text-amber-600"}>
+                {uploadedCount}/{totalImages}
+              </Badge>
+            </div>
+            {imageBlocks.length > 0 ? (
+              <div className="grid grid-cols-2 gap-4">
+                {imageBlocks.map((block) => (
+                  <ImageUploadSlot
+                    key={block.key}
+                    pageId={page.id}
+                    imageKey={block.key}
+                    src={block.src}
+                    alt={block.alt}
+                    token={token}
+                    onUploaded={handleImageUploaded}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-muted/30 rounded-lg p-6 text-center text-muted-foreground text-sm">
+                <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                Нет блоков с фото. Перегенерируйте страницу — AI создаст блоки с фото.
+              </div>
+            )}
+          </section>
+
+          <Separator />
+
+          {/* ── Превью блоков ── */}
+          {blocks.length > 0 && (
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Превью статьи ({blocks.length} блоков)</h3>
+              <div className="bg-muted/20 rounded-lg p-4 space-y-3 text-sm">
+                {blocks.map((block, i) => {
+                  if (block.type === "heading") return (
+                    <div key={i} className={block.level === 1 ? "text-lg font-bold" : "text-base font-semibold mt-2"}>
+                      {block.text}
+                    </div>
+                  );
+                  if (block.type === "text") return (
+                    <p key={i} className="text-muted-foreground leading-relaxed">{block.content}</p>
+                  );
+                  if (block.type === "image") return (
+                    <div key={i} className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+                      <ImageIcon className="w-4 h-4" />
+                      <span className="font-mono">[{block.key}]</span>
+                      {block.src ? (
+                        <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-600 text-[10px]">✓ загружено</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="bg-amber-500/15 text-amber-600 text-[10px]">⬆ нужно фото</Badge>
+                      )}
+                    </div>
+                  );
+                  return null;
+                })}
+              </div>
+            </section>
+          )}
+
+          <Separator />
+
+          {/* ── FAQ ── */}
+          {page.faq && page.faq.length > 0 && (
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">FAQ ({page.faq.length})</h3>
+              <div className="space-y-2">
                 {page.faq.map((f, i) => (
                   <div key={i} className="bg-muted/30 rounded-lg p-3 text-sm">
                     <div className="font-medium">{f.question}</div>
@@ -1830,28 +2048,17 @@ function DetailDialog({ page, token, onClose, onSaved }: {
                   </div>
                 ))}
               </div>
-            </div>
+            </section>
           )}
-          <div className="grid grid-cols-3 gap-3 text-xs text-muted-foreground">
+
+          {/* ── Мета-инфо ── */}
+          <div className="grid grid-cols-3 gap-3 text-xs text-muted-foreground pb-4">
             <div><span className="font-medium">Язык:</span> {LOCALE_FLAGS[page.locale]} {page.locale}</div>
             <div><span className="font-medium">Тип:</span> {INTENT_LABELS[page.intent_type] || page.intent_type}</div>
             <div><span className="font-medium">Создано:</span> {new Date(page.created_at).toLocaleDateString("ru-RU")}</div>
           </div>
         </div>
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          <Button
-            variant="destructive"
-            onClick={handleRegenerate}
-            disabled={regenerating || saving}
-            className="sm:mr-auto"
-          >
-            {regenerating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-            Перегенерировать
-          </Button>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
-          <Button onClick={handleSave} disabled={saving || regenerating}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Сохранить"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

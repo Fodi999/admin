@@ -15,6 +15,11 @@ function authHeaders(token: string) {
 
 // ── Types ────────────────────────────────────────────────────────────
 
+export type ContentBlock =
+  | { type: 'heading'; level: number; text: string }
+  | { type: 'text'; content: string }
+  | { type: 'image'; key: string; alt: string; src?: string };
+
 export interface IntentPage {
   id: string;
   intent_type: string;
@@ -26,6 +31,7 @@ export interface IntentPage {
   answer: string;
   faq: { question: string; answer: string }[];
   slug: string;
+  content_blocks: ContentBlock[];
   status: 'draft' | 'queued' | 'published' | 'archived';
   priority: number;
   published_at: string | null;
@@ -389,4 +395,66 @@ export async function setGoogleDiscovered(
   });
   if (!res.ok) throw new Error('Failed to update google discovered pages');
   return res.json();
+}
+
+// ── Image Upload ─────────────────────────────────────────────────
+
+export interface ImageUploadResponse {
+  upload_url: string;
+  public_url: string;
+}
+
+/** GET /api/admin/intent-pages/:id/images/:key/upload-url?content_type=... */
+export async function getImageUploadUrl(
+  token: string,
+  pageId: string,
+  key: string,
+  contentType: string = 'image/webp',
+): Promise<ImageUploadResponse> {
+  const res = await fetch(
+    `${IP}/${pageId}/images/${key}/upload-url?content_type=${encodeURIComponent(contentType)}`,
+    { headers: authHeaders(token), cache: 'no-store' },
+  );
+  if (!res.ok) throw new Error('Failed to get upload URL');
+  return res.json();
+}
+
+/** POST /api/admin/intent-pages/:id/images/:key  body: { image_url } */
+export async function saveImageUrl(
+  token: string,
+  pageId: string,
+  key: string,
+  imageUrl: string,
+): Promise<IntentPage> {
+  const res = await fetch(`${IP}/${pageId}/images/${key}`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ image_url: imageUrl }),
+  });
+  if (!res.ok) throw new Error('Failed to save image URL');
+  return res.json();
+}
+
+/** Upload a file to R2 via presigned URL, then save the public URL. */
+export async function uploadImageToR2(
+  token: string,
+  pageId: string,
+  key: string,
+  file: File,
+): Promise<IntentPage> {
+  const { upload_url, public_url } = await getImageUploadUrl(
+    token,
+    pageId,
+    key,
+    file.type || 'image/webp',
+  );
+  // PUT the file directly to R2
+  const putRes = await fetch(upload_url, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'image/webp' },
+    body: file,
+  });
+  if (!putRes.ok) throw new Error('Failed to upload image to R2');
+  // Save the public URL in DB
+  return saveImageUrl(token, pageId, key, public_url);
 }
