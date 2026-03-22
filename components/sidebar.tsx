@@ -13,7 +13,8 @@ import {
   ChefHat,
   FileText,
   Menu,
-  X 
+  X,
+  Search,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,11 @@ const routes = [
     label: "Статьи",
     icon: FileText,
     href: "/articles",
+  },
+  {
+    label: "SEO Страницы",
+    icon: Search,
+    href: "/seo",
   },
   {
     label: "Categories",

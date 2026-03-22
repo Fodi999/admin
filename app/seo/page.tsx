@@ -1170,23 +1170,134 @@ function PageRow({
 // ПРЕВЬЮ ДЛЯ GOOGLE (SERP Preview)
 // ══════════════════════════════════════════════════════════════════
 
-function seoScore(page: IntentPage): { score: number; grade: string; color: string } {
-  let s = 0;
+// ── SEO scoring: two separate scores ─────────────────────────────────────────
+// uiScore  = content quality (length, FAQ count) — 0-50 pts
+// seoScore = semantic quality (keyword, slug, intent match) — 0-50 pts
+// total    = uiScore + seoScore → grade A+/A/B/C/D
+
+function seoAnalysis(page: IntentPage): {
+  uiScore: number;
+  seoScore: number;
+  total: number;
+  grade: string;
+  color: string;
+  checks: { id: string; status: "ok" | "warn" | "err"; label: string; hint: string }[];
+} {
   const tl = page.title.length;
   const dl = page.description.length;
   const al = page.answer.length;
   const fl = page.faq?.length || 0;
-  // Title: 50-60 = perfect, 40-65 = ok
-  if (tl >= 50 && tl <= 60) s += 25; else if (tl >= 40 && tl <= 65) s += 15; else if (tl >= 30) s += 5;
-  // Description: 120-155 = perfect, 100-160 = ok
-  if (dl >= 120 && dl <= 155) s += 25; else if (dl >= 100 && dl <= 160) s += 15; else if (dl >= 80) s += 5;
-  // Answer: 400-800 = perfect, 200-1000 = ok
-  if (al >= 400 && al <= 800) s += 25; else if (al >= 200 && al <= 1000) s += 15; else if (al >= 100) s += 5;
-  // FAQ: 4 = perfect, 3 = ok, 2 = partial
-  if (fl >= 4) s += 25; else if (fl >= 3) s += 15; else if (fl >= 2) s += 8;
-  const grade = s >= 90 ? "A+" : s >= 75 ? "A" : s >= 60 ? "B" : s >= 40 ? "C" : "D";
-  const color = s >= 75 ? "text-emerald-600" : s >= 50 ? "text-amber-600" : "text-red-500";
-  return { score: s, grade, color };
+  const slug = page.slug.toLowerCase();
+  const titleLow = page.title.toLowerCase();
+  const entityA = page.entity_a.toLowerCase().replace(/-/g, " ");
+  const entityASlug = page.entity_a.toLowerCase();
+
+  // ── UI Score (50 pts) ──────────────────────────────────────────────────────
+  let ui = 0;
+  // Title length (15 pts)
+  if (tl >= 50 && tl <= 60) ui += 15; else if (tl >= 40 && tl <= 65) ui += 9; else if (tl >= 30) ui += 3;
+  // Description length (15 pts)
+  if (dl >= 120 && dl <= 155) ui += 15; else if (dl >= 100 && dl <= 160) ui += 9; else if (dl >= 80) ui += 3;
+  // Answer length (10 pts)
+  if (al >= 400 && al <= 800) ui += 10; else if (al >= 200 && al <= 1000) ui += 6; else if (al >= 100) ui += 2;
+  // FAQ count (10 pts)
+  if (fl >= 4) ui += 10; else if (fl >= 3) ui += 6; else if (fl >= 2) ui += 3;
+
+  // ── SEO Score (50 pts) ────────────────────────────────────────────────────
+  let seo = 0;
+
+  // 1. Slug contains entity keyword (15 pts)
+  const slugHasKeyword = slug.includes(entityASlug);
+  if (slugHasKeyword) seo += 15;
+
+  // 2. Slug is semantic (not generic: question-X, goal-X) (10 pts)
+  const genericSlug = /^(question|goal|comparison|combo)-/.test(slug);
+  if (!genericSlug && slug.length > 10) seo += 10; else if (!genericSlug) seo += 5;
+
+  // 3. Title contains entity keyword (10 pts)
+  const titleHasKeyword = titleLow.includes(entityA) || titleLow.includes(entityASlug);
+  if (titleHasKeyword) seo += 10;
+
+  // 4. Intent match: question → title should be a question (10 pts)
+  const isQuestion = page.intent_type === "question";
+  const titleIsQuestion = /\?/.test(page.title) || /^(is|are|can|does|do|how|what|why|when|полезен|можно|стоит|как|чем|что)/i.test(page.title.trim());
+  if (!isQuestion) seo += 10; // non-question intents always pass
+  else if (titleIsQuestion) seo += 10; else seo += 3;
+
+  // 5. Description has CTA keyword (5 pts)
+  const descLow = page.description.toLowerCase();
+  const hasCta = /узнайте|learn|dowiedz|дізнайтесь|прочитайте|discover/.test(descLow);
+  if (hasCta) seo += 5;
+
+  const total = ui + seo;
+  const grade = total >= 90 ? "A+" : total >= 75 ? "A" : total >= 60 ? "B" : total >= 40 ? "C" : "D";
+  const color = total >= 75 ? "text-emerald-600" : total >= 50 ? "text-amber-600" : "text-red-500";
+
+  // ── Checks list ───────────────────────────────────────────────────────────
+  const checks: { id: string; status: "ok" | "warn" | "err"; label: string; hint: string }[] = [
+    {
+      id: "title-len",
+      status: tl >= 50 && tl <= 60 ? "ok" : tl >= 40 && tl <= 65 ? "warn" : "err",
+      label: `Title: ${tl} символов`,
+      hint: tl < 40 ? "❌ Слишком короткий (нужно 50-60)" : tl < 50 ? "⚠ Коротковат, идеал 50-60" : tl > 65 ? "❌ Обрежется в SERP" : tl > 60 ? "⚠ На грани" : "✅ Идеально",
+    },
+    {
+      id: "desc-len",
+      status: dl >= 120 && dl <= 155 ? "ok" : dl >= 100 && dl <= 160 ? "warn" : "err",
+      label: `Description: ${dl} символов`,
+      hint: dl < 100 ? "❌ Слишком короткий (нужно 120-155)" : dl < 120 ? "⚠ Коротковат" : dl > 160 ? "❌ Google обрежет" : dl > 155 ? "⚠ На грани" : "✅ Идеально",
+    },
+    {
+      id: "answer-len",
+      status: al >= 400 && al <= 800 ? "ok" : al >= 200 && al <= 1000 ? "warn" : "err",
+      label: `Контент: ${al} символов`,
+      hint: al < 200 ? "❌ Слишком мало" : al < 400 ? "⚠ Маловато, идеал 400-800" : al > 1000 ? "⚠ Можно сократить" : "✅ Идеально",
+    },
+    {
+      id: "faq",
+      status: fl >= 4 ? "ok" : fl >= 3 ? "warn" : "err",
+      label: `FAQ: ${fl} вопросов`,
+      hint: fl < 2 ? "❌ Нужно минимум 4 FAQ для Rich Snippets" : fl < 3 ? "⚠ Мало (нужно 4)" : fl < 4 ? "⚠ Хорошо, но идеал = 4" : "✅ Rich Snippets активны",
+    },
+    {
+      id: "slug-keyword",
+      status: slugHasKeyword ? "ok" : "err",
+      label: `Slug содержит ключ: "${entityASlug}"`,
+      hint: slugHasKeyword ? `✅ /${slug}` : `❌ /${slug} — нет ключа "${entityASlug}", регенерировать`,
+    },
+    {
+      id: "slug-semantic",
+      status: !genericSlug && slug.length > 10 ? "ok" : !genericSlug ? "warn" : "err",
+      label: `Slug семантичный`,
+      hint: genericSlug ? `❌ Шаблонный slug (${slug.split('-')[0]}-...) — регенерировать` : slug.length <= 10 ? "⚠ Очень короткий slug" : "✅ Семантический slug",
+    },
+    {
+      id: "title-keyword",
+      status: titleHasKeyword ? "ok" : "warn",
+      label: `Ключ в title: "${entityA}"`,
+      hint: titleHasKeyword ? "✅ Ключевое слово в заголовке" : `⚠ Нет "${entityA}" в заголовке — добавить`,
+    },
+    {
+      id: "intent-match",
+      status: !isQuestion ? "ok" : titleIsQuestion ? "ok" : "warn",
+      label: `Intent match (${page.intent_type})`,
+      hint: !isQuestion ? "✅ Не вопрос — ок" : titleIsQuestion ? "✅ Title — вопрос (соответствует intent)" : "⚠ Intent=question, но title не вопрос",
+    },
+    {
+      id: "desc-cta",
+      status: hasCta ? "ok" : "warn",
+      label: `CTA в description`,
+      hint: hasCta ? "✅ Есть призыв к действию" : "⚠ Добавь 'Узнайте' / 'Learn' / 'Discover'",
+    },
+  ];
+
+  return { uiScore: ui, seoScore: seo, total, grade, color, checks };
+}
+
+// Legacy alias for badge
+function seoScore(page: IntentPage): { score: number; grade: string; color: string } {
+  const { total, grade, color } = seoAnalysis(page);
+  return { score: total, grade, color };
 }
 
 function SeoScoreBadge({ page }: { page: IntentPage }) {
@@ -1200,28 +1311,55 @@ function SeoScoreBadge({ page }: { page: IntentPage }) {
 }
 
 function PreviewDialog({ page, onClose }: { page: IntentPage; onClose: () => void }) {
-  const url = `https://dima-fomin.pl/chef-tools/seo/${page.slug}`;
-  const titleLen = page.title.length;
-  const descLen = page.description.length;
-  const answerLen = page.answer.length;
-  const faqCount = page.faq?.length || 0;
-  const { score, grade, color } = seoScore(page);
+  // Real blog URL: /[locale]/chef-tools/seo/[slug]
+  const realUrl = `https://dima-fomin.pl/${page.locale}/chef-tools/seo/${page.slug}`;
+  const [urlStatus, setUrlStatus] = useState<"idle" | "checking" | "ok" | "404" | "err">("idle");
+
+  const { uiScore, seoScore: seoSc, total, grade, color, checks } = seoAnalysis(page);
+
+  const checkUrl = async () => {
+    setUrlStatus("checking");
+    try {
+      const res = await fetch(`/api/check-url?url=${encodeURIComponent(realUrl)}`);
+      const data = await res.json();
+      setUrlStatus(data.status === 200 ? "ok" : data.status === 404 ? "404" : "err");
+    } catch {
+      setUrlStatus("err");
+    }
+  };
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <MonitorSmartphone className="w-5 h-5" /> Превью в Google
-            <span className={`ml-auto text-lg font-bold ${color}`}>{grade} ({score}/100)</span>
+            <MonitorSmartphone className="w-5 h-5" /> SEO Preview
+            <span className={`ml-auto text-lg font-bold ${color}`}>{grade} ({total}/100)</span>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-5">
+          {/* Real URL */}
+          <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2 text-xs font-mono">
+            <span className="text-muted-foreground shrink-0">URL:</span>
+            <span className="truncate flex-1 text-foreground">{realUrl}</span>
+            <button
+              onClick={checkUrl}
+              className="shrink-0 text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 border transition-colors"
+            >
+              {urlStatus === "checking" ? "..." : "Check"}
+            </button>
+            {urlStatus === "ok" && <span className="text-emerald-600 font-bold shrink-0">200 ✅</span>}
+            {urlStatus === "404" && <span className="text-red-500 font-bold shrink-0">404 ❌</span>}
+            {urlStatus === "err" && <span className="text-amber-500 font-bold shrink-0">ERR ⚠</span>}
+          </div>
+
           {/* Google SERP mock */}
-          <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 border space-y-1">
-            <div className="text-xs text-muted-foreground truncate">{url}</div>
-            <h3 className="text-[#1a0dab] dark:text-blue-400 text-lg font-normal hover:underline cursor-pointer leading-snug">
+          <div className="bg-white dark:bg-zinc-900 rounded-xl p-5 border space-y-1">
+            <div className="text-xs text-emerald-700 dark:text-emerald-400 truncate">
+              dima-fomin.pl › {page.locale} › chef-tools › seo › <strong>{page.slug}</strong>
+            </div>
+            <h3 className="text-[#1a0dab] dark:text-blue-400 text-[18px] font-normal hover:underline cursor-pointer leading-snug">
               {page.title}
             </h3>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-2 leading-relaxed">
@@ -1229,55 +1367,47 @@ function PreviewDialog({ page, onClose }: { page: IntentPage; onClose: () => voi
             </p>
           </div>
 
-          {/* SEO Score bar */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-semibold">SEO Score</span>
-              <span className={`font-bold ${color}`}>{score}/100</span>
+          {/* Two-score bars */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5 bg-muted/30 rounded-lg p-3">
+              <div className="flex justify-between text-xs font-semibold">
+                <span>UI Score</span>
+                <span className={uiScore >= 38 ? "text-emerald-600" : uiScore >= 25 ? "text-amber-600" : "text-red-500"}>
+                  {uiScore}/50
+                </span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${uiScore >= 38 ? "bg-emerald-500" : uiScore >= 25 ? "bg-amber-500" : "bg-red-500"}`}
+                  style={{ width: `${(uiScore / 50) * 100}%` }}
+                />
+              </div>
+              <div className="text-[10px] text-muted-foreground">Title · Description · Контент · FAQ</div>
             </div>
-            <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-700 ${score >= 75 ? "bg-emerald-500" : score >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                style={{ width: `${score}%` }}
-              />
+            <div className="space-y-1.5 bg-muted/30 rounded-lg p-3">
+              <div className="flex justify-between text-xs font-semibold">
+                <span>SEO Score</span>
+                <span className={seoSc >= 38 ? "text-emerald-600" : seoSc >= 25 ? "text-amber-600" : "text-red-500"}>
+                  {seoSc}/50
+                </span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${seoSc >= 38 ? "bg-emerald-500" : seoSc >= 25 ? "bg-amber-500" : "bg-red-500"}`}
+                  style={{ width: `${(seoSc / 50) * 100}%` }}
+                />
+              </div>
+              <div className="text-[10px] text-muted-foreground">Slug · Keyword · Intent · CTA</div>
             </div>
           </div>
 
-          {/* Аудит SEO */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold">SEO аудит</h4>
-
-            <div className="grid gap-2">
-              <SeoCheck
-                ok={titleLen >= 50 && titleLen <= 60}
-                warn={titleLen >= 40 && titleLen <= 65}
-                label={`Title: ${titleLen} символов`}
-                hint={titleLen < 40 ? "❌ Слишком короткий (нужно 50-60)" : titleLen < 50 ? "⚠ Коротковат (идеал 50-60)" : titleLen > 65 ? "❌ Слишком длинный (макс. 60)" : titleLen > 60 ? "⚠ Чуть длинноват" : "✅ Идеальная длина"}
-              />
-              <SeoCheck
-                ok={descLen >= 120 && descLen <= 155}
-                warn={descLen >= 100 && descLen <= 160}
-                label={`Description: ${descLen} символов`}
-                hint={descLen < 100 ? "❌ Слишком короткий (нужно 120-155)" : descLen < 120 ? "⚠ Коротковат (идеал 120-155)" : descLen > 160 ? "❌ Обрежется в Google" : descLen > 155 ? "⚠ На грани обрезки" : "✅ Идеальная длина"}
-              />
-              <SeoCheck
-                ok={answerLen >= 400 && answerLen <= 800}
-                warn={answerLen >= 200 && answerLen <= 1000}
-                label={`Контент: ${answerLen} символов`}
-                hint={answerLen < 200 ? "❌ Слишком мало (нужно 400-800)" : answerLen < 400 ? "⚠ Маловато (идеал 400-800)" : answerLen > 1000 ? "⚠ Многовато" : answerLen > 800 ? "⚠ Чуть длинный" : "✅ Идеальный объём"}
-              />
-              <SeoCheck
-                ok={faqCount >= 4}
-                warn={faqCount >= 3}
-                label={`FAQ: ${faqCount} вопросов`}
-                hint={faqCount < 2 ? "❌ Нужно минимум 3-4 FAQ" : faqCount < 3 ? "⚠ Мало (нужно 3-4)" : faqCount < 4 ? "⚠ Хорошо, но идеал = 4" : "✅ Отлично для Rich Snippets"}
-              />
-              <SeoCheck
-                ok={page.slug === page.slug.toLowerCase() && !page.slug.includes(" ") && page.slug.length > 10}
-                warn={page.slug === page.slug.toLowerCase() && !page.slug.includes(" ")}
-                label={`Slug: /${page.slug}`}
-                hint={page.slug.includes(" ") ? "❌ Пробелы в slug!" : page.slug.length <= 10 ? "⚠ Очень короткий slug" : "✅ Формат верный"}
-              />
+          {/* Audit checks */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-semibold">SEO аудит ({checks.filter(c => c.status === "ok").length}/{checks.length} ✅)</h4>
+            <div className="grid gap-1.5">
+              {checks.map(c => (
+                <SeoCheck key={c.id} ok={c.status === "ok"} warn={c.status === "warn"} label={c.label} hint={c.hint} />
+              ))}
             </div>
           </div>
 
@@ -1285,7 +1415,7 @@ function PreviewDialog({ page, onClose }: { page: IntentPage; onClose: () => voi
           {page.faq && page.faq.length > 0 && (
             <div className="space-y-2">
               <h4 className="text-sm font-semibold">FAQ Schema (Rich Snippets)</h4>
-              <div className="bg-muted/30 rounded-lg p-3 space-y-2 text-sm max-h-[200px] overflow-y-auto">
+              <div className="bg-muted/30 rounded-lg p-3 space-y-2 text-sm max-h-[180px] overflow-y-auto">
                 {page.faq.map((f, i) => (
                   <div key={i}>
                     <div className="font-medium text-[#1a0dab] dark:text-blue-400">{f.question}</div>
@@ -1299,13 +1429,11 @@ function PreviewDialog({ page, onClose }: { page: IntentPage; onClose: () => voi
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Закрыть</Button>
-          {page.status !== "published" && (
-            <Button asChild>
-              <a href={url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="w-4 h-4 mr-2" /> Превью URL
-              </a>
-            </Button>
-          )}
+          <Button asChild variant="outline">
+            <a href={realUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="w-4 h-4 mr-2" /> Открыть страницу
+            </a>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

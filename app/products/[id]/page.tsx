@@ -66,7 +66,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Camera, Loader2, ArrowLeft, Save, Sparkles, Search, Globe, X, Plus, Pencil } from 'lucide-react';
+import { Camera, Loader2, ArrowLeft, Save, Sparkles, Search, Globe, X, Plus, Pencil, BarChart3 } from 'lucide-react';
 
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter', 'AllYear'];
 const SEASON_MONTHS: Record<string, number[]> = {
@@ -146,6 +146,8 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     og_description: '',
     og_image: '',
   });
+  // 'auto' = read-only, using AI/generated values; 'override' = admin can edit
+  const [seoMode, setSeoMode] = useState<'auto' | 'override'>('auto');
   const [seoLoading, setSeoLoading] = useState(false);
   // Pairing state
   const [pairings, setPairings] = useState<PairingsResponse | null>(null);
@@ -1486,196 +1488,375 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       )}
 
       {/* ── TAB: SEO ────────────────────────────────────────────────── */}
-      {activeTab === 'seo' && (
-        <div className="space-y-5">
-          {/* AI Generate button */}
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              onClick={handleGenerateSeo}
-              disabled={seoLoading || saving}
-              className="rounded-xl bg-gradient-to-r from-violet-50 to-purple-50 hover:from-violet-100 hover:to-purple-100 border-violet-200 text-violet-700 dark:from-violet-950/30 dark:to-purple-950/30 dark:text-violet-300 dark:border-violet-800"
-            >
-              {seoLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
-              {seoLoading ? 'AI генерирует...' : '🤖 Сгенерировать SEO с AI'}
-            </Button>
-            <span className="text-xs text-muted-foreground">AI сгенерирует title, description, h1 и Open Graph</span>
-          </div>
+      {activeTab === 'seo' && (() => {
+        // ── Audit computations ──────────────────────────────────────
+        const titleLen   = seo.seo_title?.length ?? 0;
+        const descLen    = seo.seo_description?.length ?? 0;
+        const h1Len      = seo.seo_h1?.length ?? 0;
 
-          {/* Google Preview */}
-          <section className="glass rounded-2xl p-5 space-y-3">
-            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Search className="h-4 w-4" />
-              Предпросмотр в Google
-            </h2>
-            <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-border/50 max-w-xl">
-              <div className="text-xs text-green-700 dark:text-green-400 font-normal mb-0.5 truncate">
-                {seo.canonical_url || `https://dima-fomin.pl/ingredients/${product.slug || 'slug'}`}
-              </div>
-              <div className="text-blue-700 dark:text-blue-400 text-lg font-medium leading-snug mb-1 line-clamp-1 hover:underline cursor-pointer">
-                {seo.seo_title || `${product.name_en} — Nutrition | dima-fomin.pl`}
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 leading-relaxed">
-                {seo.seo_description || 'Meta description will appear here...'}
-              </div>
+        type AuditStatus = 'ok' | 'warn' | 'err';
+        const auditTitle: AuditStatus  = titleLen >= 30 && titleLen <= 60 ? 'ok' : titleLen > 60 ? 'err' : 'warn';
+        const auditDesc: AuditStatus   = descLen >= 100 && descLen <= 155 ? 'ok' : descLen > 155 ? 'err' : 'warn';
+        const auditH1: AuditStatus     = h1Len > 0 ? 'ok' : 'warn';
+        const auditCanon: AuditStatus  = seo.canonical_url ? 'ok' : 'warn';
+        const auditOg: AuditStatus     = seo.og_image ? 'ok' : 'warn';
+
+        const auditScore = [auditTitle, auditDesc, auditH1, auditCanon, auditOg]
+          .filter((s) => s === 'ok').length;
+        const ctrLabel = auditScore >= 4 ? 'High 🚀' : auditScore >= 2 ? 'Medium ⚡' : 'Low 🔴';
+        const ctrColor = auditScore >= 4 ? 'text-emerald-600' : auditScore >= 2 ? 'text-amber-600' : 'text-red-500';
+
+        function AuditRow({ label, status, detail }: { label: string; status: AuditStatus; detail: string }) {
+          const icon = status === 'ok' ? '✅' : status === 'warn' ? '⚠️' : '❌';
+          const color = status === 'ok' ? 'text-emerald-600' : status === 'warn' ? 'text-amber-600' : 'text-red-500';
+          return (
+            <div className="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0">
+              <span className="text-sm font-medium">{icon} {label}</span>
+              <span className={`text-xs tabular-nums font-mono ${color}`}>{detail}</span>
             </div>
-          </section>
+          );
+        }
 
-          {/* SEO Fields */}
-          <section className="glass rounded-2xl p-5 space-y-4">
-            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">🏷️ Meta Tags</h2>
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label className="flex items-center justify-between">
-                  <span>SEO Title</span>
-                  <span className={`text-xs tabular-nums ${(seo.seo_title?.length || 0) > 60 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                    {seo.seo_title?.length || 0}/60
-                  </span>
-                </Label>
-                <Input
-                  value={seo.seo_title}
-                  onChange={(e) => setSeo((prev) => ({ ...prev, seo_title: e.target.value }))}
-                  className="rounded-xl"
-                  placeholder="Product Name — Nutrition, Vitamins | dima-fomin.pl"
-                  maxLength={80}
-                />
+        const isAuto = seoMode === 'auto';
+        const activeTitle = seo.seo_title || `${product.name_en} — Nutrition | dima-fomin.pl`;
+        const activeDesc  = seo.seo_description || 'Meta description will appear here...';
+
+        return (
+          <div className="space-y-5">
+
+            {/* ── Mode Toggle ─────────────────────────────────────── */}
+            <section className="glass rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="h-4 w-4 text-violet-500" />
+                <span className="text-sm font-semibold">Режим SEO</span>
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="flex items-center justify-between">
-                  <span>SEO Description</span>
-                  <span className={`text-xs tabular-nums ${(seo.seo_description?.length || 0) > 155 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                    {seo.seo_description?.length || 0}/155
-                  </span>
-                </Label>
-                <Textarea
-                  value={seo.seo_description}
-                  onChange={(e) => setSeo((prev) => ({ ...prev, seo_description: e.target.value }))}
-                  className="rounded-xl resize-none"
-                  rows={3}
-                  placeholder="Compelling meta description with nutrition keywords..."
-                  maxLength={200}
-                />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSeoMode('auto')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                    isAuto
+                      ? 'bg-violet-500 text-white border-violet-500 shadow-sm'
+                      : 'bg-muted text-muted-foreground border-border hover:border-violet-300'
+                  }`}
+                >
+                  <span className="text-base">🤖</span>
+                  Авто SEO
+                  {isAuto && <span className="text-[10px] bg-white/20 rounded px-1">рекомендуется</span>}
+                </button>
+                <button
+                  onClick={() => setSeoMode('override')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                    !isAuto
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                      : 'bg-muted text-muted-foreground border-border hover:border-amber-300'
+                  }`}
+                >
+                  <span className="text-base">✏️</span>
+                  Ручной override
+                </button>
               </div>
+              <p className="text-xs text-muted-foreground mt-2.5">
+                {isAuto
+                  ? 'SEO генерируется автоматически. Нажмите «Перегенерировать» чтобы обновить.'
+                  : 'Вы редактируете SEO вручную. Ваши данные заменят автоматически сгенерированные.'}
+              </p>
+            </section>
 
-              <div className="space-y-1.5">
-                <Label>SEO H1</Label>
-                <Input
-                  value={seo.seo_h1}
-                  onChange={(e) => setSeo((prev) => ({ ...prev, seo_h1: e.target.value }))}
-                  className="rounded-xl"
-                  placeholder="Product Name — Nutrition & Culinary Profile"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Canonical URL</Label>
-                <Input
-                  value={seo.canonical_url}
-                  onChange={(e) => setSeo((prev) => ({ ...prev, canonical_url: e.target.value }))}
-                  className="rounded-xl"
-                  placeholder="https://dima-fomin.pl/ingredients/product-slug"
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* Open Graph */}
-          <section className="glass rounded-2xl p-5 space-y-4">
-            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Globe className="h-4 w-4" />
-              Open Graph (соц. сети)
-            </h2>
-
-            {/* OG Preview */}
-            <div className="bg-white dark:bg-zinc-900 rounded-xl border border-border/50 overflow-hidden max-w-md">
-              {(seo.og_image || product.image_url) && (
-                <div className="relative w-full h-40 bg-muted">
-                  <Image
-                    src={seo.og_image || product.image_url || ''}
-                    alt="OG Preview"
-                    fill
-                    className="object-cover"
-                    sizes="400px"
-                  />
+            {/* ── Google SERP Preview ─────────────────────────────── */}
+            <section className="glass rounded-2xl p-5 space-y-3">
+              <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <Search className="h-4 w-4" />
+                Предпросмотр в Google
+              </h2>
+              <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-border/50 max-w-xl">
+                <div className="text-xs text-green-700 dark:text-green-400 font-normal mb-0.5 truncate">
+                  {seo.canonical_url || `https://dima-fomin.pl/en/chef-tools/nutrition/${product.slug || 'slug'}`}
                 </div>
-              )}
-              <div className="p-3 space-y-1">
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">dima-fomin.pl</div>
-                <div className="text-sm font-semibold line-clamp-2">
-                  {seo.og_title || seo.seo_title || product.name_en}
+                <div className="text-blue-700 dark:text-blue-400 text-lg font-medium leading-snug mb-1 line-clamp-1">
+                  {activeTitle}
                 </div>
-                <div className="text-xs text-muted-foreground line-clamp-2">
-                  {seo.og_description || seo.seo_description || ''}
+                <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 leading-relaxed">
+                  {activeDesc}
                 </div>
               </div>
-            </div>
+            </section>
 
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label className="flex items-center justify-between">
-                  <span>OG Title</span>
-                  <span className={`text-xs tabular-nums ${(seo.og_title?.length || 0) > 65 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                    {seo.og_title?.length || 0}/65
-                  </span>
-                </Label>
-                <Input
-                  value={seo.og_title}
-                  onChange={(e) => setSeo((prev) => ({ ...prev, og_title: e.target.value }))}
-                  className="rounded-xl"
-                  placeholder="Engaging social media title"
-                  maxLength={80}
+            {/* ── SEO Audit ───────────────────────────────────────── */}
+            <section className="glass rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4" />
+                  SEO Audit
+                </h2>
+                <span className={`text-sm font-bold ${ctrColor}`}>
+                  CTR Potential: {ctrLabel}
+                </span>
+              </div>
+              <div className="bg-muted/40 rounded-xl p-3">
+                <AuditRow
+                  label="Title"
+                  status={auditTitle}
+                  detail={titleLen === 0 ? 'не задан' : `${titleLen} символов ${titleLen > 60 ? '— слишком длинный' : titleLen < 30 ? '— слишком короткий' : '✓'}`}
+                />
+                <AuditRow
+                  label="Description"
+                  status={auditDesc}
+                  detail={descLen === 0 ? 'не задан' : `${descLen} символов ${descLen > 155 ? '— слишком длинный' : descLen < 100 ? '— добавьте больше текста' : '✓'}`}
+                />
+                <AuditRow
+                  label="H1"
+                  status={auditH1}
+                  detail={h1Len > 0 ? `${h1Len} символов` : 'не задан'}
+                />
+                <AuditRow
+                  label="Canonical URL"
+                  status={auditCanon}
+                  detail={seo.canonical_url ? 'задан ✓' : 'не задан'}
+                />
+                <AuditRow
+                  label="OG Image"
+                  status={auditOg}
+                  detail={seo.og_image ? 'задан ✓' : 'не задана — соц. сети покажут placeholder'}
                 />
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="flex items-center justify-between">
-                  <span>OG Description</span>
-                  <span className={`text-xs tabular-nums ${(seo.og_description?.length || 0) > 200 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                    {seo.og_description?.length || 0}/200
-                  </span>
-                </Label>
-                <Textarea
-                  value={seo.og_description}
-                  onChange={(e) => setSeo((prev) => ({ ...prev, og_description: e.target.value }))}
-                  className="rounded-xl resize-none"
-                  rows={2}
-                  placeholder="Social-friendly description..."
-                  maxLength={250}
-                />
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="font-mono bg-muted rounded px-1.5 py-0.5">{auditScore}/5</span>
+                <span>SEO-показателей в норме</span>
               </div>
+            </section>
 
-              <div className="space-y-1.5">
-                <Label>OG Image URL</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={seo.og_image}
-                    onChange={(e) => setSeo((prev) => ({ ...prev, og_image: e.target.value }))}
-                    className="rounded-xl flex-1"
-                    placeholder="https://..."
-                  />
-                  {product.image_url && !seo.og_image && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-xl shrink-0"
-                      onClick={() => setSeo((prev) => ({ ...prev, og_image: product.image_url || '' }))}
-                    >
-                      Из фото
-                    </Button>
+            {/* ── Meta Fields (auto: read-only | override: editable) ── */}
+            <section className="glass rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">🏷️ Meta Tags</h2>
+                {isAuto ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleGenerateSeo}
+                    disabled={seoLoading}
+                    className="rounded-xl text-xs h-8 border-violet-300 text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:border-violet-800"
+                  >
+                    {seoLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : '🔄'}
+                    {seoLoading ? 'Генерируется...' : 'Перегенерировать'}
+                  </Button>
+                ) : (
+                  <span className="text-[10px] text-amber-600 font-medium bg-amber-50 dark:bg-amber-950/30 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800">
+                    ✏️ Override режим
+                  </span>
+                )}
+              </div>
+              <div className="space-y-4">
+
+                {/* SEO Title */}
+                <div className="space-y-1.5">
+                  <Label className="flex items-center justify-between">
+                    <span>SEO Title</span>
+                    <span className={`text-xs tabular-nums ${titleLen > 60 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
+                      {titleLen}/60
+                    </span>
+                  </Label>
+                  {isAuto ? (
+                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground select-text min-h-[40px]">
+                      {seo.seo_title || <span className="italic text-muted-foreground/50">автоматически: {product.name_en} — Nutrition | dima-fomin.pl</span>}
+                    </div>
+                  ) : (
+                    <Input
+                      value={seo.seo_title}
+                      onChange={(e) => setSeo((prev) => ({ ...prev, seo_title: e.target.value }))}
+                      className="rounded-xl"
+                      placeholder="Product Name — Nutrition, Vitamins | dima-fomin.pl"
+                      maxLength={80}
+                    />
                   )}
                 </div>
-              </div>
-            </div>
-          </section>
 
-          <div className="flex items-center gap-3">
-            <Button onClick={handleSaveSeo} disabled={saving} className="h-11 px-8 rounded-xl font-semibold">
-              {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Сохранение...</> : <><Save className="mr-2 h-4 w-4" />Сохранить SEO</>}
-            </Button>
+                {/* SEO Description */}
+                <div className="space-y-1.5">
+                  <Label className="flex items-center justify-between">
+                    <span>SEO Description</span>
+                    <span className={`text-xs tabular-nums ${descLen > 155 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
+                      {descLen}/155
+                    </span>
+                  </Label>
+                  {isAuto ? (
+                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground min-h-[72px] leading-relaxed select-text">
+                      {seo.seo_description || <span className="italic text-muted-foreground/50">автоматически — нажмите «Перегенерировать»</span>}
+                    </div>
+                  ) : (
+                    <Textarea
+                      value={seo.seo_description}
+                      onChange={(e) => setSeo((prev) => ({ ...prev, seo_description: e.target.value }))}
+                      className="rounded-xl resize-none"
+                      rows={3}
+                      placeholder="Compelling meta description with nutrition keywords..."
+                      maxLength={200}
+                    />
+                  )}
+                </div>
+
+                {/* H1 */}
+                <div className="space-y-1.5">
+                  <Label>SEO H1</Label>
+                  {isAuto ? (
+                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground select-text min-h-[40px]">
+                      {seo.seo_h1 || <span className="italic text-muted-foreground/50">автоматически</span>}
+                    </div>
+                  ) : (
+                    <Input
+                      value={seo.seo_h1}
+                      onChange={(e) => setSeo((prev) => ({ ...prev, seo_h1: e.target.value }))}
+                      className="rounded-xl"
+                      placeholder="Product Name — Nutrition & Culinary Profile"
+                    />
+                  )}
+                </div>
+
+                {/* Canonical — always editable (important for SEO) */}
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    Canonical URL
+                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">всегда доступно</span>
+                  </Label>
+                  <Input
+                    value={seo.canonical_url}
+                    onChange={(e) => setSeo((prev) => ({ ...prev, canonical_url: e.target.value }))}
+                    className="rounded-xl"
+                    placeholder={`https://dima-fomin.pl/en/chef-tools/nutrition/${product.slug || 'slug'}`}
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* ── Open Graph ─────────────────────────────────────── */}
+            <section className="glass rounded-2xl p-5 space-y-4">
+              <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <Globe className="h-4 w-4" />
+                Open Graph (соц. сети)
+                {isAuto && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-normal">auto</span>}
+              </h2>
+
+              {/* OG Preview */}
+              <div className="bg-white dark:bg-zinc-900 rounded-xl border border-border/50 overflow-hidden max-w-md">
+                {(seo.og_image || product.image_url) && (
+                  <div className="relative w-full h-40 bg-muted">
+                    <Image
+                      src={seo.og_image || product.image_url || ''}
+                      alt="OG Preview"
+                      fill
+                      className="object-cover"
+                      sizes="400px"
+                    />
+                  </div>
+                )}
+                <div className="p-3 space-y-1">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider">dima-fomin.pl</div>
+                  <div className="text-sm font-semibold line-clamp-2">
+                    {seo.og_title || seo.seo_title || product.name_en}
+                  </div>
+                  <div className="text-xs text-muted-foreground line-clamp-2">
+                    {seo.og_description || seo.seo_description || ''}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="flex items-center justify-between">
+                    <span>OG Title</span>
+                    <span className={`text-xs tabular-nums ${(seo.og_title?.length || 0) > 65 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
+                      {seo.og_title?.length || 0}/65
+                    </span>
+                  </Label>
+                  {isAuto ? (
+                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground select-text min-h-[40px]">
+                      {seo.og_title || seo.seo_title || <span className="italic text-muted-foreground/50">= SEO Title</span>}
+                    </div>
+                  ) : (
+                    <Input
+                      value={seo.og_title}
+                      onChange={(e) => setSeo((prev) => ({ ...prev, og_title: e.target.value }))}
+                      className="rounded-xl"
+                      placeholder="Engaging social media title"
+                      maxLength={80}
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="flex items-center justify-between">
+                    <span>OG Description</span>
+                    <span className={`text-xs tabular-nums ${(seo.og_description?.length || 0) > 200 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
+                      {seo.og_description?.length || 0}/200
+                    </span>
+                  </Label>
+                  {isAuto ? (
+                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground min-h-[56px] select-text">
+                      {seo.og_description || seo.seo_description || <span className="italic text-muted-foreground/50">= SEO Description</span>}
+                    </div>
+                  ) : (
+                    <Textarea
+                      value={seo.og_description}
+                      onChange={(e) => setSeo((prev) => ({ ...prev, og_description: e.target.value }))}
+                      className="rounded-xl resize-none"
+                      rows={2}
+                      placeholder="Social-friendly description..."
+                      maxLength={250}
+                    />
+                  )}
+                </div>
+
+                {/* OG Image — always editable */}
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    OG Image URL
+                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">всегда доступно</span>
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={seo.og_image}
+                      onChange={(e) => setSeo((prev) => ({ ...prev, og_image: e.target.value }))}
+                      className="rounded-xl flex-1"
+                      placeholder="https://..."
+                    />
+                    {product.image_url && !seo.og_image && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-xl shrink-0"
+                        onClick={() => setSeo((prev) => ({ ...prev, og_image: product.image_url || '' }))}
+                      >
+                        Из фото
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* ── Save ────────────────────────────────────────────── */}
+            <div className="flex items-center gap-3">
+              <Button onClick={handleSaveSeo} disabled={saving} className="h-11 px-8 rounded-xl font-semibold">
+                {saving
+                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Сохранение...</>
+                  : <><Save className="mr-2 h-4 w-4" />Сохранить{!isAuto ? ' override' : ' SEO'}</>}
+              </Button>
+              {!isAuto && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={() => {
+                    setSeoMode('auto');
+                  }}
+                >
+                  ← Вернуться в авто
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── TAB: PAIRING ───────────────────────────────────────────── */}
       {activeTab === 'pairing' && (
