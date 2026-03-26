@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   Search,
+  FlaskConical,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,11 @@ const routes = [
     label: "SEO Страницы",
     icon: Search,
     href: "/seo",
+  },
+  {
+    label: "Lab Combos",
+    icon: FlaskConical,
+    href: "/lab-combos",
   },
   {
     label: "Categories",

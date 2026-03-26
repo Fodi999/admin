@@ -227,7 +227,7 @@ export async function generateBatch(
 export async function updateIntentPage(
   token: string,
   id: string,
-  data: Partial<Pick<IntentPage, 'title' | 'description' | 'answer' | 'slug'>> & { priority?: number },
+  data: Partial<Pick<IntentPage, 'title' | 'description' | 'answer' | 'slug' | 'content_blocks'>> & { priority?: number },
 ): Promise<IntentPage> {
   const res = await fetch(`${IP}/${id}`, {
     method: 'PUT',

@@ -1846,9 +1846,16 @@ function DetailDialog({ page: initialPage, token, onClose, onSaved }: {
   const [priority, setPriority] = useState(String(page.priority));
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [editableBlocks, setEditableBlocks] = useState<ContentBlock[]>(
+    Array.isArray(page.content_blocks) ? page.content_blocks : []
+  );
 
-  const blocks: ContentBlock[] = Array.isArray(page.content_blocks) ? page.content_blocks : [];
+  const blocks: ContentBlock[] = editableBlocks;
   const imageBlocks = blocks.filter((b): b is ContentBlock & { type: "image" } => b.type === "image");
+
+  const updateBlock = (index: number, changes: Partial<ContentBlock>) => {
+    setEditableBlocks(prev => prev.map((b, i) => i === index ? { ...b, ...changes } as ContentBlock : b));
+  };
 
   const handleRegenerate = async () => {
     if (!confirm("Очистить AI-кеш и сгенерировать заново? Все фото будут удалены.")) return;
@@ -1867,7 +1874,7 @@ function DetailDialog({ page: initialPage, token, onClose, onSaved }: {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateIntentPage(token, page.id, { title, description, answer, slug, priority: parseInt(priority, 10) });
+      await updateIntentPage(token, page.id, { title, description, answer, slug, priority: parseInt(priority, 10), content_blocks: editableBlocks });
       toast.success("Страница обновлена");
       onSaved();
     } catch (err) {
@@ -1879,6 +1886,16 @@ function DetailDialog({ page: initialPage, token, onClose, onSaved }: {
 
   const handleImageUploaded = (updated: IntentPage) => {
     setPage(updated);
+    // Merge uploaded image src back into editableBlocks
+    if (Array.isArray(updated.content_blocks)) {
+      setEditableBlocks(prev => prev.map(b => {
+        if (b.type !== "image") return b;
+        const fresh = (updated.content_blocks as ContentBlock[]).find(
+          (u): u is ContentBlock & { type: "image" } => u.type === "image" && u.key === b.key
+        );
+        return fresh ? { ...b, src: fresh.src } : b;
+      }));
+    }
   };
 
   const uploadedCount = imageBlocks.filter(b => "src" in b && b.src).length;
@@ -2005,16 +2022,31 @@ function DetailDialog({ page: initialPage, token, onClose, onSaved }: {
               <div className="bg-muted/20 rounded-lg p-4 space-y-3 text-sm">
                 {blocks.map((block, i) => {
                   if (block.type === "heading") return (
-                    <div key={i} className={block.level === 1 ? "text-lg font-bold" : "text-base font-semibold mt-2"}>
-                      {block.text}
+                    <div key={i} className="space-y-1">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">
+                        H{block.level}
+                      </span>
+                      <input
+                        value={block.text}
+                        onChange={(e) => updateBlock(i, { text: e.target.value })}
+                        className={`w-full bg-background border rounded px-2 py-1 ${block.level === 1 ? "text-base font-bold" : "text-sm font-semibold"}`}
+                      />
                     </div>
                   );
                   if (block.type === "text") return (
-                    <p key={i} className="text-muted-foreground leading-relaxed">{block.content}</p>
+                    <div key={i} className="space-y-1">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Текст</span>
+                      <textarea
+                        value={block.content}
+                        onChange={(e) => updateBlock(i, { content: e.target.value })}
+                        rows={Math.max(3, Math.ceil(block.content.length / 80))}
+                        className="w-full bg-background border rounded px-2 py-1 text-sm text-muted-foreground leading-relaxed resize-y"
+                      />
+                    </div>
                   );
                   if (block.type === "image") return (
-                    <div key={i} className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
-                      <ImageIcon className="w-4 h-4" />
+                    <div key={i} className="flex items-center gap-2 py-1 text-xs text-muted-foreground border border-dashed rounded px-2">
+                      <ImageIcon className="w-4 h-4 flex-shrink-0" />
                       <span className="font-mono">[{block.key}]</span>
                       {block.src ? (
                         <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-600 text-[10px]">✓ загружено</Badge>
