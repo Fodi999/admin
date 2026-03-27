@@ -30,6 +30,10 @@ export interface LabComboPage {
   description: string;
   h1: string;
   intro: string;
+  why_it_works: string;
+  how_to_cook: { step: number; text: string; time_minutes?: number }[];
+  optimization_tips: { icon: string; action: string; ingredient: string; tip: string }[];
+  image_url: string | null;
   smart_response: Record<string, unknown>;
   faq: { question: string; answer: string }[];
   status: 'draft' | 'published' | 'archived';
@@ -58,6 +62,15 @@ export interface GeneratePopularRequest {
 export interface GeneratePopularResult {
   generated: number;
   details: string[];
+}
+
+export interface UpdateComboRequest {
+  title?: string;
+  description?: string;
+  h1?: string;
+  intro?: string;
+  why_it_works?: string;
+  image_url?: string;
 }
 
 // ── API Functions ────────────────────────────────────────────────────
@@ -148,4 +161,22 @@ export async function deleteCombo(
     headers: authHeaders(token),
   });
   if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
+}
+
+/** PATCH /api/admin/lab-combos/:id */
+export async function updateCombo(
+  token: string,
+  id: string,
+  req: UpdateComboRequest,
+): Promise<LabComboPage> {
+  const res = await fetch(`${API_BASE}/api/admin/lab-combos/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Failed to update combo: ${res.status}`);
+  }
+  return res.json();
 }

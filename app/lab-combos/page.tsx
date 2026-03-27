@@ -10,6 +10,7 @@ import {
   publishCombo,
   archiveCombo,
   deleteCombo,
+  updateCombo,
   type LabComboPage,
   type GenerateComboRequest,
 } from "@/lib/lab-combos-api";
@@ -30,6 +31,9 @@ import {
   Filter,
   Sparkles,
   ChevronDown,
+  Pencil,
+  Save,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -108,6 +112,56 @@ export default function LabCombosPage() {
 
   // Action loading states
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+
+  // Detail dialog
+  const [detailCombo, setDetailCombo] = useState<LabComboPage | null>(null);
+
+  // Edit mode inside detail dialog
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editH1, setEditH1] = useState("");
+  const [editIntro, setEditIntro] = useState("");
+  const [editWhyItWorks, setEditWhyItWorks] = useState("");
+  const [editImageUrl, setEditImageUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const startEditing = (combo: LabComboPage) => {
+    setEditTitle(combo.title);
+    setEditDescription(combo.description);
+    setEditH1(combo.h1);
+    setEditIntro(combo.intro);
+    setEditWhyItWorks(combo.why_it_works || "");
+    setEditImageUrl(combo.image_url || "");
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!token || !detailCombo) return;
+    setSaving(true);
+    try {
+      const updated = await updateCombo(token, detailCombo.id, {
+        title: editTitle,
+        description: editDescription,
+        h1: editH1,
+        intro: editIntro,
+        why_it_works: editWhyItWorks,
+        ...(editImageUrl ? { image_url: editImageUrl } : {}),
+      });
+      setDetailCombo(updated);
+      setEditing(false);
+      toast.success("Saved!");
+      await loadCombos();
+    } catch (err: unknown) {
+      toast.error("Save failed", { description: String(err) });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ── Auth ───────────────────────────────────────────────────────────
 
@@ -280,25 +334,37 @@ export default function LabCombosPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <Card className="bg-card/50 backdrop-blur">
+        <Card
+          className="bg-card/50 backdrop-blur cursor-pointer hover:ring-2 ring-primary/30 transition-all"
+          onClick={() => setFilterStatus("all")}
+        >
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-black">{stats.total}</p>
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Total</p>
           </CardContent>
         </Card>
-        <Card className="bg-yellow-500/5 border-yellow-500/20">
+        <Card
+          className={`bg-yellow-500/5 border-yellow-500/20 cursor-pointer hover:ring-2 ring-yellow-500/30 transition-all ${filterStatus === "draft" ? "ring-2" : ""}`}
+          onClick={() => setFilterStatus(filterStatus === "draft" ? "all" : "draft")}
+        >
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-black text-yellow-600">{stats.draft}</p>
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Draft</p>
           </CardContent>
         </Card>
-        <Card className="bg-emerald-500/5 border-emerald-500/20">
+        <Card
+          className={`bg-emerald-500/5 border-emerald-500/20 cursor-pointer hover:ring-2 ring-emerald-500/30 transition-all ${filterStatus === "published" ? "ring-2" : ""}`}
+          onClick={() => setFilterStatus(filterStatus === "published" ? "all" : "published")}
+        >
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-black text-emerald-600">{stats.published}</p>
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Published</p>
           </CardContent>
         </Card>
-        <Card className="bg-zinc-500/5 border-zinc-500/20">
+        <Card
+          className={`bg-zinc-500/5 border-zinc-500/20 cursor-pointer hover:ring-2 ring-zinc-500/30 transition-all ${filterStatus === "archived" ? "ring-2" : ""}`}
+          onClick={() => setFilterStatus(filterStatus === "archived" ? "all" : "archived")}
+        >
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-black text-zinc-500">{stats.archived}</p>
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Archived</p>
@@ -404,7 +470,11 @@ export default function LabCombosPage() {
       ) : (
         <div className="space-y-2">
           {filtered.map((combo) => (
-            <Card key={combo.id} className="bg-card/50 backdrop-blur hover:bg-card/80 transition-colors">
+            <Card
+              key={combo.id}
+              className="bg-card/50 backdrop-blur hover:bg-card/80 transition-colors cursor-pointer"
+              onClick={() => setDetailCombo(combo)}
+            >
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   {/* Left: info */}
@@ -448,7 +518,7 @@ export default function LabCombosPage() {
                   </div>
 
                   {/* Right: actions */}
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                     {combo.status === "published" && (
                       <Button
                         size="icon"
@@ -529,6 +599,288 @@ export default function LabCombosPage() {
           ))}
         </div>
       )}
+
+      {/* ── Detail / Preview / Edit Dialog ──────────────────────────── */}
+      <Dialog open={!!detailCombo} onOpenChange={(open) => { if (!open) { setDetailCombo(null); setEditing(false); } }}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          {detailCombo && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-lg">
+                  <FlaskConical className="h-5 w-5 text-primary" />
+                  {editing ? "Edit Combo" : "Combo Detail"}
+                  <Badge className={`ml-2 text-[10px] ${STATUS_COLORS[detailCombo.status]}`}>
+                    {detailCombo.status}
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px]">
+                    {detailCombo.locale.toUpperCase()}
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px]">
+                    Score: {detailCombo.quality_score}/5
+                  </Badge>
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-5 text-sm">
+                {/* Slug & Link */}
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Slug</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs bg-muted px-2 py-1 rounded font-mono flex-1 break-all">
+                      /chef-tools/lab/combo/{detailCombo.slug}
+                    </code>
+                    {detailCombo.status === "published" && (
+                      <Button size="sm" variant="outline" asChild>
+                        <a href={`${BLOG_BASE}/${detailCombo.locale}/chef-tools/lab/combo/${detailCombo.slug}`} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Image */}
+                {editing ? (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Image URL</p>
+                    <Input value={editImageUrl} onChange={(e) => setEditImageUrl(e.target.value)} placeholder="https://..." className="text-xs" />
+                  </div>
+                ) : detailCombo.image_url ? (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Image</p>
+                    <img src={detailCombo.image_url} alt={detailCombo.title} className="w-full max-h-48 object-cover rounded-lg" />
+                  </div>
+                ) : null}
+
+                {/* Ingredients */}
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Ingredients</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {detailCombo.ingredients.map((ing) => (
+                      <span key={ing} className="inline-block px-2.5 py-1 bg-primary/10 text-primary text-xs rounded-full font-medium">{ing}</span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 6D Context */}
+                {(detailCombo.goal || detailCombo.meal_type || detailCombo.diet || detailCombo.cooking_time || detailCombo.budget || detailCombo.cuisine) && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">6D Context</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {detailCombo.goal && <Badge variant="secondary">🎯 {detailCombo.goal.replace(/_/g, " ")}</Badge>}
+                      {detailCombo.meal_type && <Badge variant="secondary">🍽️ {detailCombo.meal_type}</Badge>}
+                      {detailCombo.diet && <Badge variant="secondary">🥗 {detailCombo.diet.replace(/_/g, " ")}</Badge>}
+                      {detailCombo.cooking_time && <Badge variant="secondary">⏱️ {detailCombo.cooking_time}</Badge>}
+                      {detailCombo.budget && <Badge variant="secondary">💰 {detailCombo.budget}</Badge>}
+                      {detailCombo.cuisine && <Badge variant="secondary">🌍 {detailCombo.cuisine}</Badge>}
+                    </div>
+                  </div>
+                )}
+
+                {/* SEO Metadata — editable or view */}
+                <div className="space-y-3 border rounded-lg p-4 bg-muted/20">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">SEO Metadata</p>
+                    {!editing && (
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => startEditing(detailCombo)}>
+                        <Pencil className="h-3 w-3 mr-1" /> Edit
+                      </Button>
+                    )}
+                  </div>
+
+                  {editing ? (
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground">Title <span className="text-muted-foreground/50">({editTitle.length}/60)</span></p>
+                        <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground">Description <span className="text-muted-foreground/50">({editDescription.length}/155)</span></p>
+                        <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="text-xs" rows={3} />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground">H1</p>
+                        <Input value={editH1} onChange={(e) => setEditH1(e.target.value)} className="text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground">Intro</p>
+                        <Textarea value={editIntro} onChange={(e) => setEditIntro(e.target.value)} className="text-xs" rows={4} />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground">Why It Works</p>
+                        <Textarea value={editWhyItWorks} onChange={(e) => setEditWhyItWorks(e.target.value)} className="text-xs" rows={4} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground">Title</p>
+                        <p className="font-semibold">{detailCombo.title}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground">Description</p>
+                        <p className="text-muted-foreground">{detailCombo.description}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground">H1</p>
+                        <p className="font-bold text-base">{detailCombo.h1}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground">Intro</p>
+                        <p className="text-muted-foreground">{detailCombo.intro}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Why It Works (view only — shown when not editing) */}
+                {!editing && detailCombo.why_it_works && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Why It Works</p>
+                    <div className="bg-primary/5 border border-primary/10 rounded-lg p-3">
+                      <p className="text-sm text-foreground/90">{detailCombo.why_it_works}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* How to Cook */}
+                {Array.isArray(detailCombo.how_to_cook) && detailCombo.how_to_cook.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      How to Cook ({detailCombo.how_to_cook.length} steps)
+                    </p>
+                    <div className="space-y-1.5">
+                      {detailCombo.how_to_cook.map((step, i) => (
+                        <div key={i} className="flex gap-2 text-xs">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+                            {step.step}
+                          </span>
+                          <p className="text-foreground/80 flex-1">{step.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Optimization Tips */}
+                {Array.isArray(detailCombo.optimization_tips) && detailCombo.optimization_tips.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Optimization Tips ({detailCombo.optimization_tips.length})
+                    </p>
+                    <div className="space-y-1">
+                      {detailCombo.optimization_tips.map((tip, i) => (
+                        <div key={i} className="flex items-start gap-2 text-xs">
+                          <span>{tip.icon}</span>
+                          <span className="text-foreground/80">
+                            {tip.ingredient && <strong className="text-primary mr-1">{tip.ingredient}</strong>}
+                            {tip.tip}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* FAQ */}
+                {Array.isArray(detailCombo.faq) && detailCombo.faq.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      FAQ ({detailCombo.faq.length} questions)
+                    </p>
+                    <div className="space-y-2">
+                      {detailCombo.faq.map((item, i) => (
+                        <div key={i} className="border rounded-lg p-3 bg-muted/10">
+                          <p className="font-semibold text-xs">{item.question}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{item.answer}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* SmartResponse preview */}
+                <details className="group">
+                  <summary className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer">
+                    SmartResponse (raw JSON) ▾
+                  </summary>
+                  <pre className="text-[10px] bg-muted/40 rounded-lg p-3 overflow-auto max-h-64 font-mono whitespace-pre-wrap break-all mt-2">
+                    {JSON.stringify(detailCombo.smart_response, null, 2)}
+                  </pre>
+                </details>
+
+                {/* Timestamps */}
+                <div className="flex gap-6 text-[10px] text-muted-foreground/60">
+                  <span>Created: {new Date(detailCombo.created_at).toLocaleString()}</span>
+                  <span>Updated: {new Date(detailCombo.updated_at).toLocaleString()}</span>
+                  {detailCombo.published_at && (
+                    <span>Published: {new Date(detailCombo.published_at).toLocaleString()}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <DialogFooter className="flex-row gap-2 sm:justify-between">
+                <div className="flex gap-2">
+                  {editing ? (
+                    <>
+                      <Button size="sm" onClick={handleSaveEdit} disabled={saving}>
+                        {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                        Save
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={cancelEditing} disabled={saving}>
+                        <X className="h-4 w-4 mr-1" /> Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      {detailCombo.status !== "published" && (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (!token) return;
+                            doAction(detailCombo.id, () => publishCombo(token, detailCombo.id), "Published!");
+                            setDetailCombo(null);
+                          }}
+                          disabled={actionLoading[detailCombo.id]}
+                        >
+                          <ArrowUpCircle className="h-4 w-4 mr-1" /> Publish
+                        </Button>
+                      )}
+                      {detailCombo.status !== "archived" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (!token) return;
+                            doAction(detailCombo.id, () => archiveCombo(token, detailCombo.id), "Archived!");
+                            setDetailCombo(null);
+                          }}
+                          disabled={actionLoading[detailCombo.id]}
+                        >
+                          <Archive className="h-4 w-4 mr-1" /> Archive
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  {!editing && detailCombo.status === "published" && (
+                    <Button size="sm" variant="outline" asChild>
+                      <a href={`${BLOG_BASE}/${detailCombo.locale}/chef-tools/lab/combo/${detailCombo.slug}`} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> View on Site
+                      </a>
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => { setDetailCombo(null); setEditing(false); }}>
+                    Close
+                  </Button>
+                </div>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Generate Dialog ──────────────────────────────────────────── */}
       <Dialog open={showGenerate} onOpenChange={setShowGenerate}>
