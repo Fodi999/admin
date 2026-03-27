@@ -161,10 +161,10 @@ export default function LabCombosPage() {
       });
       setDetailCombo(updated);
       setEditing(false);
-      toast.success("Saved!");
+      toast.success("Сохранено!");
       await loadCombos();
     } catch (err: unknown) {
-      toast.error("Save failed", { description: String(err) });
+      toast.error("Ошибка сохранения", { description: String(err) });
     } finally {
       setSaving(false);
     }
@@ -182,10 +182,10 @@ export default function LabCombosPage() {
       });
       const updated = await saveComboImageUrl(token, detailCombo.id, public_url);
       setDetailCombo(updated);
-      toast.success("Image uploaded!");
+      toast.success("Фото загружено!");
       await loadCombos();
     } catch (err: unknown) {
-      toast.error("Upload failed", { description: String(err) });
+      toast.error("Ошибка загрузки", { description: String(err) });
     } finally {
       setImageUploading(false);
     }
@@ -342,20 +342,20 @@ export default function LabCombosPage() {
         <div>
           <h1 className="text-3xl font-black tracking-tight flex items-center gap-2">
             <FlaskConical className="h-7 w-7 text-primary" />
-            Lab Combo SEO Pages
+            SEO-страницы Lab Combo
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Prerendered SEO pages for ingredient combos — clean URLs for Google
+            Готовые SEO-страницы комбинаций ингредиентов — чистые URL для Google
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={loadCombos} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+            Обновить
           </Button>
           <Button size="sm" onClick={() => setShowGenerate(true)}>
             <Plus className="h-4 w-4 mr-1" />
-            Generate Combo
+            Создать Combo
           </Button>
         </div>
       </div>
@@ -368,7 +368,7 @@ export default function LabCombosPage() {
         >
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-black">{stats.total}</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Total</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Всего</p>
           </CardContent>
         </Card>
         <Card
@@ -377,7 +377,7 @@ export default function LabCombosPage() {
         >
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-black text-yellow-600">{stats.draft}</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Draft</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Черновик</p>
           </CardContent>
         </Card>
         <Card
@@ -386,7 +386,7 @@ export default function LabCombosPage() {
         >
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-black text-emerald-600">{stats.published}</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Published</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Опубликовано</p>
           </CardContent>
         </Card>
         <Card
@@ -395,13 +395,13 @@ export default function LabCombosPage() {
         >
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-black text-zinc-500">{stats.archived}</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Archived</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">В архиве</p>
           </CardContent>
         </Card>
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-black text-primary">{stats.avgScore}</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Avg Score</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Ср. балл</p>
           </CardContent>
         </Card>
       </div>
@@ -411,7 +411,7 @@ export default function LabCombosPage() {
         <CardContent className="p-4">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-              <Rocket className="h-4 w-4" /> Quick:
+              <Rocket className="h-4 w-4" /> Быстро:
             </span>
             <Select value={popularLocale} onValueChange={setPopularLocale}>
               <SelectTrigger className="w-20 h-8 text-xs">
@@ -434,7 +434,7 @@ export default function LabCombosPage() {
               ) : (
                 <Sparkles className="h-4 w-4 mr-1" />
               )}
-              Generate 14 Popular Combos
+              Создать 14 популярных Combo
             </Button>
           </div>
         </CardContent>
@@ -445,7 +445,7 @@ export default function LabCombosPage() {
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by slug, title, ingredient..."
+            placeholder="Поиск по slug, названию, ингредиенту..."
             className="pl-9 h-9"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -454,29 +454,29 @@ export default function LabCombosPage() {
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className="w-32 h-9">
             <Filter className="h-3.5 w-3.5 mr-1" />
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder="Статус" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="published">Published</SelectItem>
-            <SelectItem value="archived">Archived</SelectItem>
+            <SelectItem value="all">Все статусы</SelectItem>
+            <SelectItem value="draft">Черновик</SelectItem>
+            <SelectItem value="published">Опубликовано</SelectItem>
+            <SelectItem value="archived">В архиве</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filterLocale} onValueChange={setFilterLocale}>
           <SelectTrigger className="w-28 h-9">
             <Globe className="h-3.5 w-3.5 mr-1" />
-            <SelectValue placeholder="Locale" />
+            <SelectValue placeholder="Язык" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="all">Все</SelectItem>
             {LOCALES.map((l) => (
               <SelectItem key={l} value={l}>{l.toUpperCase()}</SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Badge variant="secondary" className="h-9 px-3 text-xs">
-          {filtered.length} pages
+          {filtered.length} страниц
         </Badge>
       </div>
 
@@ -489,9 +489,9 @@ export default function LabCombosPage() {
         <Card className="bg-card/50">
           <CardContent className="p-12 text-center">
             <FlaskConical className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
-            <p className="text-lg font-semibold text-muted-foreground">No combo pages yet</p>
+            <p className="text-lg font-semibold text-muted-foreground">Пока нет combo-страниц</p>
             <p className="text-sm text-muted-foreground/70 mt-1">
-              Click &quot;Generate Combo&quot; or &quot;Generate 14 Popular Combos&quot; to start
+              Нажмите &quot;Создать Combo&quot; или &quot;Создать 14 популярных Combo&quot; чтобы начать
             </p>
           </CardContent>
         </Card>
@@ -575,24 +575,24 @@ export default function LabCombosPage() {
                           <DropdownMenuItem
                             onClick={() =>
                               token &&
-                              doAction(combo.id, () => publishCombo(token, combo.id), "Published!")
+                              doAction(combo.id, () => publishCombo(token, combo.id), "Опубликовано!")
                             }
                             disabled={actionLoading[combo.id]}
                           >
                             <ArrowUpCircle className="h-4 w-4 mr-2 text-emerald-500" />
-                            Publish
+                            Опубликовать
                           </DropdownMenuItem>
                         )}
                         {combo.status !== "archived" && (
                           <DropdownMenuItem
                             onClick={() =>
                               token &&
-                              doAction(combo.id, () => archiveCombo(token, combo.id), "Archived!")
+                              doAction(combo.id, () => archiveCombo(token, combo.id), "В архиве!")
                             }
                             disabled={actionLoading[combo.id]}
                           >
                             <Archive className="h-4 w-4 mr-2 text-zinc-500" />
-                            Archive
+                            В архив
                           </DropdownMenuItem>
                         )}
                         {combo.status === "published" && (
@@ -603,20 +603,20 @@ export default function LabCombosPage() {
                               rel="noopener noreferrer"
                             >
                               <Eye className="h-4 w-4 mr-2" />
-                              View on site
+                              Открыть на сайте
                             </a>
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem
                           onClick={() =>
                             token &&
-                            doAction(combo.id, () => deleteCombo(token, combo.id), "Deleted!")
+                            doAction(combo.id, () => deleteCombo(token, combo.id), "Удалено!")
                           }
                           disabled={actionLoading[combo.id]}
                           className="text-destructive focus:text-destructive"
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
+                          Удалить
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -636,7 +636,7 @@ export default function LabCombosPage() {
               <SheetHeader className="pb-2">
                 <SheetTitle className="flex items-center gap-2 text-lg">
                   <FlaskConical className="h-5 w-5 text-primary" />
-                  {editing ? "Edit Combo" : "Combo Detail"}
+                  {editing ? "Редактирование" : "Детали Combo"}
                   <Badge className={`ml-2 text-[10px] ${STATUS_COLORS[detailCombo.status]}`}>
                     {detailCombo.status}
                   </Badge>
@@ -652,7 +652,7 @@ export default function LabCombosPage() {
               <div className="space-y-5 text-sm pb-6">
                 {/* Slug & Link */}
                 <div className="space-y-1">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Slug</p>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Ссылка</p>
                   <div className="flex items-center gap-2">
                     <code className="text-xs bg-muted px-2 py-1 rounded font-mono flex-1 break-all">
                       /chef-tools/lab/combo/{detailCombo.slug}
@@ -660,7 +660,7 @@ export default function LabCombosPage() {
                     {detailCombo.status === "published" && (
                       <Button size="sm" variant="outline" asChild>
                         <a href={`${BLOG_BASE}/${detailCombo.locale}/chef-tools/lab/combo/${detailCombo.slug}`} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open
+                          <ExternalLink className="h-3.5 w-3.5 mr-1" /> Открыть
                         </a>
                       </Button>
                     )}
@@ -670,14 +670,14 @@ export default function LabCombosPage() {
                 {/* Image */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Image</p>
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Изображение</p>
                     <label className={`flex items-center gap-1.5 text-xs cursor-pointer px-2.5 py-1.5 rounded-lg border border-dashed transition-colors ${imageUploading ? "opacity-50 pointer-events-none" : "hover:border-primary hover:text-primary"}`}>
                       {imageUploading ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <Upload className="h-3.5 w-3.5" />
                       )}
-                      {imageUploading ? "Uploading…" : "Upload photo"}
+                      {imageUploading ? "Загрузка…" : "Загрузить фото"}
                       <input
                         type="file"
                         accept="image/*"
@@ -704,7 +704,7 @@ export default function LabCombosPage() {
 
                 {/* Ingredients */}
                 <div className="space-y-1">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Ingredients</p>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Ингредиенты</p>
                   <div className="flex flex-wrap gap-1.5">
                     {detailCombo.ingredients.map((ing) => (
                       <span key={ing} className="inline-block px-2.5 py-1 bg-primary/10 text-primary text-xs rounded-full font-medium">{ing}</span>
@@ -715,7 +715,7 @@ export default function LabCombosPage() {
                 {/* 6D Context */}
                 {(detailCombo.goal || detailCombo.meal_type || detailCombo.diet || detailCombo.cooking_time || detailCombo.budget || detailCombo.cuisine) && (
                   <div className="space-y-1">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">6D Context</p>
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Контекст 6D</p>
                     <div className="flex flex-wrap gap-1.5">
                       {detailCombo.goal && <Badge variant="secondary">🎯 {detailCombo.goal.replace(/_/g, " ")}</Badge>}
                       {detailCombo.meal_type && <Badge variant="secondary">🍽️ {detailCombo.meal_type}</Badge>}
@@ -730,10 +730,10 @@ export default function LabCombosPage() {
                 {/* SEO Metadata — editable or view */}
                 <div className="space-y-3 border rounded-lg p-4 bg-muted/20">
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">SEO Metadata</p>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">SEO-метаданные</p>
                     {!editing && (
                       <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => startEditing(detailCombo)}>
-                        <Pencil className="h-3 w-3 mr-1" /> Edit
+                        <Pencil className="h-3 w-3 mr-1" /> Редактировать
                       </Button>
                     )}
                   </div>
@@ -741,11 +741,11 @@ export default function LabCombosPage() {
                   {editing ? (
                     <div className="space-y-3">
                       <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground">Title <span className="text-muted-foreground/50">({editTitle.length}/60)</span></p>
+                        <p className="text-[10px] text-muted-foreground">Заголовок <span className="text-muted-foreground/50">({editTitle.length}/60)</span></p>
                         <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="text-xs" />
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground">Description <span className="text-muted-foreground/50">({editDescription.length}/155)</span></p>
+                        <p className="text-[10px] text-muted-foreground">Описание <span className="text-muted-foreground/50">({editDescription.length}/155)</span></p>
                         <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="text-xs" rows={3} />
                       </div>
                       <div className="space-y-1">
@@ -753,22 +753,22 @@ export default function LabCombosPage() {
                         <Input value={editH1} onChange={(e) => setEditH1(e.target.value)} className="text-xs" />
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground">Intro</p>
+                        <p className="text-[10px] text-muted-foreground">Вступление</p>
                         <Textarea value={editIntro} onChange={(e) => setEditIntro(e.target.value)} className="text-xs" rows={4} />
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground">Why It Works</p>
+                        <p className="text-[10px] text-muted-foreground">Почему это работает</p>
                         <Textarea value={editWhyItWorks} onChange={(e) => setEditWhyItWorks(e.target.value)} className="text-xs" rows={4} />
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-3">
                       <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground">Title</p>
+                        <p className="text-[10px] text-muted-foreground">Заголовок</p>
                         <p className="font-semibold">{detailCombo.title}</p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground">Description</p>
+                        <p className="text-[10px] text-muted-foreground">Описание</p>
                         <p className="text-muted-foreground">{detailCombo.description}</p>
                       </div>
                       <div className="space-y-1">
@@ -776,7 +776,7 @@ export default function LabCombosPage() {
                         <p className="font-bold text-base">{detailCombo.h1}</p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground">Intro</p>
+                        <p className="text-[10px] text-muted-foreground">Вступление</p>
                         <p className="text-muted-foreground">{detailCombo.intro}</p>
                       </div>
                     </div>
@@ -786,7 +786,7 @@ export default function LabCombosPage() {
                 {/* Why It Works (view only — shown when not editing) */}
                 {!editing && detailCombo.why_it_works && (
                   <div className="space-y-1">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Why It Works</p>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Почему это работает</p>
                     <div className="bg-primary/5 border border-primary/10 rounded-lg p-3">
                       <p className="text-sm text-foreground/90">{detailCombo.why_it_works}</p>
                     </div>
@@ -797,7 +797,7 @@ export default function LabCombosPage() {
                 {Array.isArray(detailCombo.how_to_cook) && detailCombo.how_to_cook.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      How to Cook ({detailCombo.how_to_cook.length} steps)
+                      Как готовить ({detailCombo.how_to_cook.length} шагов)
                     </p>
                     <div className="space-y-1.5">
                       {detailCombo.how_to_cook.map((step, i) => (
@@ -816,7 +816,7 @@ export default function LabCombosPage() {
                 {Array.isArray(detailCombo.optimization_tips) && detailCombo.optimization_tips.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      Optimization Tips ({detailCombo.optimization_tips.length})
+                      Советы по оптимизации ({detailCombo.optimization_tips.length})
                     </p>
                     <div className="space-y-1">
                       {detailCombo.optimization_tips.map((tip, i) => (
@@ -836,7 +836,7 @@ export default function LabCombosPage() {
                 {Array.isArray(detailCombo.faq) && detailCombo.faq.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      FAQ ({detailCombo.faq.length} questions)
+                      FAQ ({detailCombo.faq.length} вопросов)
                     </p>
                     <div className="space-y-2">
                       {detailCombo.faq.map((item, i) => (
@@ -852,7 +852,7 @@ export default function LabCombosPage() {
                 {/* SmartResponse preview */}
                 <details className="group">
                   <summary className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer">
-                    SmartResponse (raw JSON) ▾
+                    SmartResponse (JSON) ▾
                   </summary>
                   <pre className="text-[10px] bg-muted/40 rounded-lg p-3 overflow-auto max-h-64 font-mono whitespace-pre-wrap break-all mt-2">
                     {JSON.stringify(detailCombo.smart_response, null, 2)}
@@ -861,10 +861,10 @@ export default function LabCombosPage() {
 
                 {/* Timestamps */}
                 <div className="flex gap-6 text-[10px] text-muted-foreground/60">
-                  <span>Created: {new Date(detailCombo.created_at).toLocaleString()}</span>
-                  <span>Updated: {new Date(detailCombo.updated_at).toLocaleString()}</span>
+                  <span>Создано: {new Date(detailCombo.created_at).toLocaleString()}</span>
+                  <span>Обновлено: {new Date(detailCombo.updated_at).toLocaleString()}</span>
                   {detailCombo.published_at && (
-                    <span>Published: {new Date(detailCombo.published_at).toLocaleString()}</span>
+                    <span>Опубликовано: {new Date(detailCombo.published_at).toLocaleString()}</span>
                   )}
                 </div>
               </div>
@@ -876,10 +876,10 @@ export default function LabCombosPage() {
                     <>
                       <Button size="sm" onClick={handleSaveEdit} disabled={saving}>
                         {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-                        Save
+                        Сохранить
                       </Button>
                       <Button size="sm" variant="outline" onClick={cancelEditing} disabled={saving}>
-                        <X className="h-4 w-4 mr-1" /> Cancel
+                        <X className="h-4 w-4 mr-1" /> Отмена
                       </Button>
                     </>
                   ) : (
@@ -889,12 +889,12 @@ export default function LabCombosPage() {
                           size="sm"
                           onClick={() => {
                             if (!token) return;
-                            doAction(detailCombo.id, () => publishCombo(token, detailCombo.id), "Published!");
+                            doAction(detailCombo.id, () => publishCombo(token, detailCombo.id), "Опубликовано!");
                             setDetailCombo(null);
                           }}
                           disabled={actionLoading[detailCombo.id]}
                         >
-                          <ArrowUpCircle className="h-4 w-4 mr-1" /> Publish
+                          <ArrowUpCircle className="h-4 w-4 mr-1" /> Опубликовать
                         </Button>
                       )}
                       {detailCombo.status !== "archived" && (
@@ -903,12 +903,12 @@ export default function LabCombosPage() {
                           variant="outline"
                           onClick={() => {
                             if (!token) return;
-                            doAction(detailCombo.id, () => archiveCombo(token, detailCombo.id), "Archived!");
+                            doAction(detailCombo.id, () => archiveCombo(token, detailCombo.id), "В архиве!");
                             setDetailCombo(null);
                           }}
                           disabled={actionLoading[detailCombo.id]}
                         >
-                          <Archive className="h-4 w-4 mr-1" /> Archive
+                          <Archive className="h-4 w-4 mr-1" /> В архив
                         </Button>
                       )}
                     </>
@@ -918,12 +918,12 @@ export default function LabCombosPage() {
                   {!editing && detailCombo.status === "published" && (
                     <Button size="sm" variant="outline" asChild>
                       <a href={`${BLOG_BASE}/${detailCombo.locale}/chef-tools/lab/combo/${detailCombo.slug}`} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> View on Site
+                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> На сайт
                       </a>
                     </Button>
                   )}
                   <Button size="sm" variant="ghost" onClick={() => { setDetailCombo(null); setEditing(false); }}>
-                    Close
+                    Закрыть
                   </Button>
                 </div>
               </SheetFooter>
@@ -938,7 +938,7 @@ export default function LabCombosPage() {
           <SheetHeader className="pb-2">
             <SheetTitle className="flex items-center gap-2">
               <FlaskConical className="h-5 w-5 text-primary" />
-              Generate Combo Page
+              Создать Combo-страницу
             </SheetTitle>
           </SheetHeader>
 
@@ -946,7 +946,7 @@ export default function LabCombosPage() {
             {/* Ingredients */}
             <div>
               <label className="text-sm font-medium mb-1 block">
-                Ingredients (one per line or comma-separated)
+                Ингредиенты (по одному на строке или через запятую)
               </label>
               <Textarea
                 placeholder={"salmon\nrice\navocado"}
@@ -960,7 +960,7 @@ export default function LabCombosPage() {
             {/* Locale */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium mb-1 block">Locale</label>
+                <label className="text-sm font-medium mb-1 block">Язык</label>
                 <Select value={genLocale} onValueChange={setGenLocale}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -971,11 +971,11 @@ export default function LabCombosPage() {
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">Goal</label>
+                <label className="text-sm font-medium mb-1 block">Цель</label>
                 <Select value={genGoal || "__none__"} onValueChange={(v) => setGenGoal(v === "__none__" ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Нет" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
+                    <SelectItem value="__none__">Нет</SelectItem>
                     {GOALS.map((g) => (
                       <SelectItem key={g} value={g}>{g.replace(/_/g, " ")}</SelectItem>
                     ))}
@@ -986,11 +986,11 @@ export default function LabCombosPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium mb-1 block">Meal Type</label>
+                <label className="text-sm font-medium mb-1 block">Приём пищи</label>
                 <Select value={genMealType || "__none__"} onValueChange={(v) => setGenMealType(v === "__none__" ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Нет" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
+                    <SelectItem value="__none__">Нет</SelectItem>
                     {MEAL_TYPES.map((m) => (
                       <SelectItem key={m} value={m}>{m}</SelectItem>
                     ))}
@@ -998,11 +998,11 @@ export default function LabCombosPage() {
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">Diet</label>
+                <label className="text-sm font-medium mb-1 block">Диета</label>
                 <Select value={genDiet || "__none__"} onValueChange={(v) => setGenDiet(v === "__none__" ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Нет" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
+                    <SelectItem value="__none__">Нет</SelectItem>
                     {DIETS.map((d) => (
                       <SelectItem key={d} value={d}>{d.replace(/_/g, " ")}</SelectItem>
                     ))}
@@ -1013,11 +1013,11 @@ export default function LabCombosPage() {
 
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="text-sm font-medium mb-1 block">Time</label>
+                <label className="text-sm font-medium mb-1 block">Время</label>
                 <Select value={genCookingTime || "__none__"} onValueChange={(v) => setGenCookingTime(v === "__none__" ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Любое" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">Any</SelectItem>
+                    <SelectItem value="__none__">Любое</SelectItem>
                     {COOKING_TIMES.map((t) => (
                       <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
@@ -1025,11 +1025,11 @@ export default function LabCombosPage() {
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">Budget</label>
+                <label className="text-sm font-medium mb-1 block">Бюджет</label>
                 <Select value={genBudget || "__none__"} onValueChange={(v) => setGenBudget(v === "__none__" ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Любой" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">Any</SelectItem>
+                    <SelectItem value="__none__">Любой</SelectItem>
                     {BUDGETS.map((b) => (
                       <SelectItem key={b} value={b}>{b}</SelectItem>
                     ))}
@@ -1037,11 +1037,11 @@ export default function LabCombosPage() {
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">Cuisine</label>
+                <label className="text-sm font-medium mb-1 block">Кухня</label>
                 <Select value={genCuisine || "__none__"} onValueChange={(v) => setGenCuisine(v === "__none__" ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Любая" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">Any</SelectItem>
+                    <SelectItem value="__none__">Любая</SelectItem>
                     {CUISINES.map((c) => (
                       <SelectItem key={c} value={c}>{c}</SelectItem>
                     ))}
@@ -1053,7 +1053,7 @@ export default function LabCombosPage() {
 
           <SheetFooter className="flex-row gap-2 pt-4">
             <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowGenerate(false)}>
-              Cancel
+              Отмена
             </Button>
             <Button className="flex-1 rounded-xl" onClick={handleGenerate} disabled={generating || !genIngredientsText.trim()}>
               {generating ? (
@@ -1061,7 +1061,7 @@ export default function LabCombosPage() {
               ) : (
                 <Sparkles className="h-4 w-4 mr-1" />
               )}
-              Generate
+              Создать
             </Button>
           </SheetFooter>
         </SheetContent>
