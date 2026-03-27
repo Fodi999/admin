@@ -16,13 +16,13 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -342,25 +342,25 @@ export default function ProductsPage() {
         )}
       </div>
 
-      {/* Delete Dialog */}
-      <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Удалить продукт?</DialogTitle>
-            <DialogDescription>
+      {/* Delete Drawer */}
+      <Sheet open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <SheetContent side="bottom" className="rounded-t-2xl">
+          <SheetHeader>
+            <SheetTitle>Удалить продукт?</SheetTitle>
+            <SheetDescription>
               Это действие необратимо. Продукт будет удалён из каталога.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteId(null)}>
+            </SheetDescription>
+          </SheetHeader>
+          <SheetFooter className="flex-row gap-2 pt-4">
+            <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setDeleteId(null)}>
               Отмена
             </Button>
-            <Button variant="destructive" onClick={handleDelete}>
+            <Button variant="destructive" className="flex-1 rounded-xl" onClick={handleDelete}>
               Удалить
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

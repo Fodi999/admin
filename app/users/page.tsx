@@ -11,13 +11,13 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Loader2, Users, Building2, ArrowLeft, Search, Trash2, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -300,15 +300,15 @@ export default function UsersPage() {
         </CardContent>
       </Card>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
+      {/* Delete Confirmation Drawer */}
+      <Sheet open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2 text-destructive">
               <AlertTriangle className="h-5 w-5" />
               Подтверждение удаления
-            </DialogTitle>
-            <DialogDescription asChild>
+            </SheetTitle>
+            <SheetDescription asChild>
               <div className="space-y-3 pt-4">
                 <p className="font-semibold text-foreground">
                   Вы действительно хотите удалить пользователя?
@@ -333,16 +333,17 @@ export default function UsersPage() {
                   <li>Все связанные данные</li>
                 </ul>
               </div>
-            </DialogDescription>
-          </DialogHeader>
+            </SheetDescription>
+          </SheetHeader>
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <DialogFooter>
+          <SheetFooter className="flex-row gap-2 pt-4">
             <Button
               variant="outline"
+              className="flex-1 rounded-xl"
               onClick={handleDeleteCancel}
               disabled={deleting}
             >
@@ -350,6 +351,7 @@ export default function UsersPage() {
             </Button>
             <Button
               variant="destructive"
+              className="flex-1 rounded-xl"
               onClick={handleDeleteConfirm}
               disabled={deleting}
             >
@@ -365,9 +367,9 @@ export default function UsersPage() {
                 </>
               )}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

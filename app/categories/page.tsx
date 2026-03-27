@@ -22,14 +22,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { 
   Card, 
   CardContent, 
@@ -191,23 +191,23 @@ export default function CategoriesPage() {
             Управление категориями товаров в каталоге
           </p>
         </div>
-        <Dialog open={isCreateOpen} onOpenChange={(open) => {
+        <Sheet open={isCreateOpen} onOpenChange={(open) => {
           setIsCreateOpen(open);
           if (!open) resetForm();
         }}>
-          <DialogTrigger asChild>
+          <SheetTrigger asChild>
             <Button size="lg" className="h-12 px-6 shadow-sm">
               <Plus className="mr-2 h-5 w-5" />
               Добавить категорию
             </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Новая категория</DialogTitle>
-              <DialogDescription>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Новая категория</SheetTitle>
+              <SheetDescription>
                 Создайте новую категорию для товаров. Названия на всех языках обязательны.
-              </DialogDescription>
-            </DialogHeader>
+              </SheetDescription>
+            </SheetHeader>
             <CategoryForm 
               formData={formData} 
               setFormData={setFormData}
@@ -215,8 +215,8 @@ export default function CategoriesPage() {
               onSubmit={handleCreate}
               resetForm={resetForm}
             />
-          </DialogContent>
-        </Dialog>
+          </SheetContent>
+        </Sheet>
       </div>
 
       <Card>
@@ -310,18 +310,18 @@ export default function CategoriesPage() {
         </CardContent>
       </Card>
 
-      {/* Edit Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={(open) => {
+      {/* Edit Drawer */}
+      <Sheet open={isEditOpen} onOpenChange={(open) => {
         setIsEditOpen(open);
         if (!open) resetForm();
       }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Редактирование категории</DialogTitle>
-            <DialogDescription>
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Редактирование категории</SheetTitle>
+            <SheetDescription>
               Измените информацию о категории. Все поля обязательны.
-            </DialogDescription>
-          </DialogHeader>
+            </SheetDescription>
+          </SheetHeader>
           <CategoryForm 
             formData={formData} 
             setFormData={setFormData}
@@ -330,29 +330,29 @@ export default function CategoriesPage() {
             resetForm={resetForm}
             isEdit
           />
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-destructive flex items-center gap-2">
+      {/* Delete Confirmation Drawer */}
+      <Sheet open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl">
+          <SheetHeader>
+            <SheetTitle className="text-destructive flex items-center gap-2">
               <Trash2 className="h-5 w-5" />
               Подтвердите удаление
-            </DialogTitle>
-            <DialogDescription className="text-base pt-2">
-              Вы уверены, что хотите удалить категорию <strong className="text-foreground">"{selectedCategory?.name_ru || selectedCategory?.name}"</strong>? 
+            </SheetTitle>
+            <SheetDescription className="text-base pt-2">
+              Вы уверены, что хотите удалить категорию <strong className="text-foreground">&quot;{selectedCategory?.name_ru || selectedCategory?.name}&quot;</strong>? 
               <br /><br />
               Внимание: Товары в этой категории останутся без категории или будут скрыты из каталога.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-4">
+            </SheetDescription>
+          </SheetHeader>
+          <SheetFooter className="flex-row gap-2 pt-4">
             <Button
               variant="outline"
               onClick={() => setIsDeleteOpen(false)}
               disabled={submitting}
-              className="px-6"
+              className="flex-1 rounded-xl px-6"
             >
               Отмена
             </Button>
@@ -360,14 +360,14 @@ export default function CategoriesPage() {
               variant="destructive"
               onClick={handleDelete}
               disabled={submitting}
-              className="px-6 shadow-sm shadow-destructive/20"
+              className="flex-1 rounded-xl px-6 shadow-sm shadow-destructive/20"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Удалить категорию
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -479,7 +479,7 @@ function CategoryForm({
         </div>
       </div>
 
-      <DialogFooter className="pt-6 border-t">
+      <SheetFooter className="flex-row gap-2 pt-6 border-t">
         <Button variant="ghost" onClick={() => resetForm()} disabled={submitting}>
           Очистить
         </Button>
@@ -487,7 +487,7 @@ function CategoryForm({
           {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
           {isEdit ? "Сохранить изменения" : "Создать категорию"}
         </Button>
-      </DialogFooter>
+      </SheetFooter>
     </div>
   );
 }

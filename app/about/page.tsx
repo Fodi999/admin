@@ -38,13 +38,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Loader2,
   Save,
@@ -960,19 +960,19 @@ export default function AboutChefPage() {
         )}
       </section>
 
-      {/* ── Delete Dialog ───────────────────────────────────────────────────── */}
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Удалить "{deleteTarget?.label}"?</DialogTitle>
-            <DialogDescription>Это действие необратимо.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Отмена</Button>
-            <Button variant="destructive" onClick={handleDelete}>Удалить</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ── Delete Drawer ──────────────────────────────────────────────────── */}
+      <Sheet open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <SheetContent side="bottom" className="rounded-t-2xl">
+          <SheetHeader>
+            <SheetTitle>Удалить &quot;{deleteTarget?.label}&quot;?</SheetTitle>
+            <SheetDescription>Это действие необратимо.</SheetDescription>
+          </SheetHeader>
+          <SheetFooter className="flex-row gap-2 pt-4">
+            <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setDeleteTarget(null)}>Отмена</Button>
+            <Button variant="destructive" className="flex-1 rounded-xl" onClick={handleDelete}>Удалить</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -82,13 +82,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -100,6 +93,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -1350,15 +1344,16 @@ function PreviewDialog({ page, token, onClose, onPublished }: { page: IntentPage
   const okCount = checks.filter(c => c.status === "ok").length;
 
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent
+    <Sheet open onOpenChange={onClose}>
+      <SheetContent
+        side="bottom"
         showCloseButton={false}
-        className="w-[600px] max-w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto p-0 gap-0"
+        className="rounded-t-2xl max-h-[90vh] overflow-y-auto p-0 gap-0"
       >
         {/* Accessible title for screen readers (visually hidden) */}
-        <DialogHeader className="sr-only">
-          <DialogTitle>SEO Preview — {page.title}</DialogTitle>
-        </DialogHeader>
+        <SheetHeader className="sr-only">
+          <SheetTitle>SEO Preview — {page.title}</SheetTitle>
+        </SheetHeader>
 
         {/* ── Header with grade badge ── */}
         <div className={`${gradeBg} px-6 py-4 flex items-center gap-3 rounded-t-lg relative`}>
@@ -1568,8 +1563,8 @@ function PreviewDialog({ page, token, onClose, onPublished }: { page: IntentPage
             )}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -1608,13 +1603,13 @@ function GenerateDialog({ token, onClose, onDone }: { token: string; onClose: ()
   };
 
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+    <Sheet open onOpenChange={onClose}>
+      <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-primary" /> Генерация SEO-пакета
-          </DialogTitle>
-        </DialogHeader>
+          </SheetTitle>
+        </SheetHeader>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1677,17 +1672,17 @@ function GenerateDialog({ token, onClose, onDone }: { token: string; onClose: ()
             </div>
           )}
         </div>
-        <DialogFooter>
+        <SheetFooter className="pt-4">
           {result ? (
-            <Button onClick={onDone}>Готово</Button>
+            <Button className="w-full rounded-xl" onClick={onDone}>Готово</Button>
           ) : (
-            <Button onClick={handleGenerate} disabled={generating}>
+            <Button className="w-full rounded-xl" onClick={handleGenerate} disabled={generating}>
               {generating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Генерация...</> : <><Zap className="w-4 h-4 mr-2" /> Сгенерировать</>}
             </Button>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -1716,11 +1711,11 @@ function SettingsDialog({ token, settings, onClose, onSaved }: {
   };
 
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Settings className="w-5 h-5" /> Настройки планировщика</DialogTitle>
-        </DialogHeader>
+    <Sheet open onOpenChange={onClose}>
+      <SheetContent side="bottom" className="rounded-t-2xl">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2"><Settings className="w-5 h-5" /> Настройки планировщика</SheetTitle>
+        </SheetHeader>
         <div className="space-y-4">
           <div>
             <Label>Дневной лимит публикаций</Label>
@@ -1728,12 +1723,12 @@ function SettingsDialog({ token, settings, onClose, onSaved }: {
             <p className="text-xs text-muted-foreground mt-1">Максимум страниц, которые планировщик опубликует за день</p>
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Сохранить"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <SheetFooter className="flex-row gap-2 pt-4">
+          <Button variant="outline" className="flex-1 rounded-xl" onClick={onClose}>Отмена</Button>
+          <Button className="flex-1 rounded-xl" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Сохранить"}</Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 

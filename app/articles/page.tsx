@@ -28,13 +28,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Loader2,
   Save,
@@ -414,20 +414,20 @@ export default function ArticlesPage() {
         ))}
       </div>
 
-      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <DialogContent className="rounded-3xl border-destructive/20 bg-background/80 backdrop-blur-2xl">
-          <DialogHeader>
-            <DialogTitle>Удалить статью?</DialogTitle>
-            <DialogDescription>
+      <Sheet open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <SheetContent side="bottom" className="rounded-t-2xl">
+          <SheetHeader>
+            <SheetTitle>Удалить статью?</SheetTitle>
+            <SheetDescription>
               Это действие необратимо. Статья будет полностью удалена.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setDeleteId(null)} className="rounded-xl">Отмена</Button>
-            <Button variant="destructive" onClick={handleDelete} className="rounded-xl px-8">Удалить</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </SheetDescription>
+          </SheetHeader>
+          <SheetFooter className="flex-row gap-2 pt-4">
+            <Button variant="ghost" onClick={() => setDeleteId(null)} className="flex-1 rounded-xl">Отмена</Button>
+            <Button variant="destructive" onClick={handleDelete} className="flex-1 rounded-xl px-8">Удалить</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

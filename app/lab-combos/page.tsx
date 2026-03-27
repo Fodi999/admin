@@ -48,12 +48,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetFooter,
+} from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -600,13 +600,13 @@ export default function LabCombosPage() {
         </div>
       )}
 
-      {/* ── Detail / Preview / Edit Dialog ──────────────────────────── */}
-      <Dialog open={!!detailCombo} onOpenChange={(open) => { if (!open) { setDetailCombo(null); setEditing(false); } }}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+      {/* ── Detail / Preview / Edit Drawer ──────────────────────────── */}
+      <Sheet open={!!detailCombo} onOpenChange={(open) => { if (!open) { setDetailCombo(null); setEditing(false); } }}>
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
           {detailCombo && (
             <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-lg">
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2 text-lg">
                   <FlaskConical className="h-5 w-5 text-primary" />
                   {editing ? "Edit Combo" : "Combo Detail"}
                   <Badge className={`ml-2 text-[10px] ${STATUS_COLORS[detailCombo.status]}`}>
@@ -618,8 +618,8 @@ export default function LabCombosPage() {
                   <Badge variant="outline" className="text-[10px]">
                     Score: {detailCombo.quality_score}/5
                   </Badge>
-                </DialogTitle>
-              </DialogHeader>
+                </SheetTitle>
+              </SheetHeader>
 
               <div className="space-y-5 text-sm">
                 {/* Slug & Link */}
@@ -820,7 +820,7 @@ export default function LabCombosPage() {
               </div>
 
               {/* Actions */}
-              <DialogFooter className="flex-row gap-2 sm:justify-between">
+              <SheetFooter className="flex-row gap-2 sm:justify-between">
                 <div className="flex gap-2">
                   {editing ? (
                     <>
@@ -876,21 +876,21 @@ export default function LabCombosPage() {
                     Close
                   </Button>
                 </div>
-              </DialogFooter>
+              </SheetFooter>
             </>
           )}
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
-      {/* ── Generate Dialog ──────────────────────────────────────────── */}
-      <Dialog open={showGenerate} onOpenChange={setShowGenerate}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+      {/* ── Generate Drawer ──────────────────────────────────────────── */}
+      <Sheet open={showGenerate} onOpenChange={setShowGenerate}>
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
               <FlaskConical className="h-5 w-5 text-primary" />
               Generate Combo Page
-            </DialogTitle>
-          </DialogHeader>
+            </SheetTitle>
+          </SheetHeader>
 
           <div className="space-y-4">
             {/* Ingredients */}
@@ -1001,11 +1001,11 @@ export default function LabCombosPage() {
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowGenerate(false)}>
+          <SheetFooter className="flex-row gap-2 pt-4">
+            <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowGenerate(false)}>
               Cancel
             </Button>
-            <Button onClick={handleGenerate} disabled={generating || !genIngredientsText.trim()}>
+            <Button className="flex-1 rounded-xl" onClick={handleGenerate} disabled={generating || !genIngredientsText.trim()}>
               {generating ? (
                 <Loader2 className="h-4 w-4 mr-1 animate-spin" />
               ) : (
@@ -1013,9 +1013,9 @@ export default function LabCombosPage() {
               )}
               Generate
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
