@@ -13,6 +13,8 @@ import {
   updateCombo,
   getComboImageUploadUrl,
   saveComboImageUrl,
+  getTypedImageUploadUrl,
+  saveTypedImageUrl,
   type LabComboPage,
   type GenerateComboRequest,
 } from "@/lib/lab-combos-api";
@@ -76,6 +78,10 @@ const DIETS = ["vegetarian", "vegan", "gluten_free"];
 const COOKING_TIMES = ["quick", "medium", "long"];
 const BUDGETS = ["cheap", "premium"];
 const CUISINES = ["italian", "asian", "mexican"];
+const AI_MODELS = [
+  { value: "flash", label: "⚡ Flash (быстрый)" },
+  { value: "pro", label: "🧠 Pro (точный SEO)" },
+];
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
@@ -108,6 +114,7 @@ export default function LabCombosPage() {
   const [genCookingTime, setGenCookingTime] = useState<string>("");
   const [genBudget, setGenBudget] = useState<string>("");
   const [genCuisine, setGenCuisine] = useState<string>("");
+  const [genModel, setGenModel] = useState<string>("pro");
   const [generating, setGenerating] = useState(false);
 
   // Popular combos generation
@@ -132,6 +139,7 @@ export default function LabCombosPage() {
 
   // Image upload state
   const [imageUploading, setImageUploading] = useState(false);
+  const [uploadingKind, setUploadingKind] = useState<string | null>(null);
 
   const startEditing = (combo: LabComboPage) => {
     setEditTitle(combo.title);
@@ -173,6 +181,7 @@ export default function LabCombosPage() {
   const handleImageUpload = async (file: File) => {
     if (!token || !detailCombo) return;
     setImageUploading(true);
+    setUploadingKind("hero");
     try {
       const { upload_url, public_url } = await getComboImageUploadUrl(token, detailCombo.id, file.type || "image/webp");
       await fetch(upload_url, {
@@ -188,6 +197,30 @@ export default function LabCombosPage() {
       toast.error("Ошибка загрузки", { description: String(err) });
     } finally {
       setImageUploading(false);
+      setUploadingKind(null);
+    }
+  };
+
+  const handleTypedImageUpload = async (file: File, kind: "process" | "detail") => {
+    if (!token || !detailCombo) return;
+    setImageUploading(true);
+    setUploadingKind(kind);
+    try {
+      const { upload_url, public_url } = await getTypedImageUploadUrl(token, detailCombo.id, kind, file.type || "image/webp");
+      await fetch(upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "image/webp" },
+        body: file,
+      });
+      const updated = await saveTypedImageUrl(token, detailCombo.id, kind, public_url);
+      setDetailCombo(updated);
+      toast.success(`${kind === "process" ? "Процесс" : "Детали"} — фото загружено!`);
+      await loadCombos();
+    } catch (err: unknown) {
+      toast.error("Ошибка загрузки", { description: String(err) });
+    } finally {
+      setImageUploading(false);
+      setUploadingKind(null);
     }
   };
 
@@ -291,6 +324,7 @@ export default function LabCombosPage() {
         ...(genCookingTime && { cooking_time: genCookingTime }),
         ...(genBudget && { budget: genBudget }),
         ...(genCuisine && { cuisine: genCuisine }),
+        model: genModel,
       };
 
       const page = await generateCombo(token, req);
@@ -313,6 +347,7 @@ export default function LabCombosPage() {
     setGenCookingTime("");
     setGenBudget("");
     setGenCuisine("");
+    setGenModel("pro");
   };
 
   // ── Generate popular ──────────────────────────────────────────────
@@ -667,39 +702,65 @@ export default function LabCombosPage() {
                   </div>
                 </div>
 
-                {/* Image */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Изображение</p>
-                    <label className={`flex items-center gap-1.5 text-xs cursor-pointer px-2.5 py-1.5 rounded-lg border border-dashed transition-colors ${imageUploading ? "opacity-50 pointer-events-none" : "hover:border-primary hover:text-primary"}`}>
-                      {imageUploading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Upload className="h-3.5 w-3.5" />
-                      )}
-                      {imageUploading ? "Загрузка…" : "Загрузить фото"}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={imageUploading}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleImageUpload(file);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                  </div>
-                  {editing ? (
-                    <Input value={editImageUrl} onChange={(e) => setEditImageUrl(e.target.value)} placeholder="https://..." className="text-xs" />
-                  ) : detailCombo.image_url ? (
-                    <img src={detailCombo.image_url} alt={detailCombo.title} className="w-full max-h-48 object-cover rounded-xl border" />
-                  ) : (
-                    <div className="flex items-center justify-center h-24 rounded-xl border border-dashed bg-muted/20 text-muted-foreground/40">
-                      <ImageIcon className="h-8 w-8" />
+                {/* Images — Hero / Process / Detail */}
+                <div className="space-y-3">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Изображения (Hero · Process · Detail)</p>
+
+                  {/* Hero Image */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">🖼️ Hero (готовое блюдо)</span>
+                      <label className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-2 py-1 rounded-lg border border-dashed transition-colors ${imageUploading ? "opacity-50 pointer-events-none" : "hover:border-primary hover:text-primary"}`}>
+                        {uploadingKind === "hero" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                        {uploadingKind === "hero" ? "…" : "Загрузить"}
+                        <input type="file" accept="image/*" className="hidden" disabled={imageUploading}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = ""; }} />
+                      </label>
                     </div>
-                  )}
+                    {editing ? (
+                      <Input value={editImageUrl} onChange={(e) => setEditImageUrl(e.target.value)} placeholder="https://..." className="text-xs" />
+                    ) : detailCombo.image_url ? (
+                      <img src={detailCombo.image_url} alt="Hero" className="w-full max-h-36 object-cover rounded-xl border" />
+                    ) : (
+                      <div className="flex items-center justify-center h-16 rounded-xl border border-dashed bg-muted/20 text-muted-foreground/40 text-xs">нет Hero</div>
+                    )}
+                  </div>
+
+                  {/* Process Image */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">🔥 Process (процесс готовки)</span>
+                      <label className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-2 py-1 rounded-lg border border-dashed transition-colors ${imageUploading ? "opacity-50 pointer-events-none" : "hover:border-primary hover:text-primary"}`}>
+                        {uploadingKind === "process" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                        {uploadingKind === "process" ? "…" : "Загрузить"}
+                        <input type="file" accept="image/*" className="hidden" disabled={imageUploading}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleTypedImageUpload(f, "process"); e.target.value = ""; }} />
+                      </label>
+                    </div>
+                    {detailCombo.process_image_url ? (
+                      <img src={detailCombo.process_image_url} alt="Process" className="w-full max-h-36 object-cover rounded-xl border" />
+                    ) : (
+                      <div className="flex items-center justify-center h-16 rounded-xl border border-dashed bg-muted/20 text-muted-foreground/40 text-xs">нет Process</div>
+                    )}
+                  </div>
+
+                  {/* Detail Image */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">🥑 Detail (ингредиенты / текстура)</span>
+                      <label className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-2 py-1 rounded-lg border border-dashed transition-colors ${imageUploading ? "opacity-50 pointer-events-none" : "hover:border-primary hover:text-primary"}`}>
+                        {uploadingKind === "detail" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                        {uploadingKind === "detail" ? "…" : "Загрузить"}
+                        <input type="file" accept="image/*" className="hidden" disabled={imageUploading}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleTypedImageUpload(f, "detail"); e.target.value = ""; }} />
+                      </label>
+                    </div>
+                    {detailCombo.detail_image_url ? (
+                      <img src={detailCombo.detail_image_url} alt="Detail" className="w-full max-h-36 object-cover rounded-xl border" />
+                    ) : (
+                      <div className="flex items-center justify-center h-16 rounded-xl border border-dashed bg-muted/20 text-muted-foreground/40 text-xs">нет Detail</div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Ingredients */}
@@ -1048,6 +1109,22 @@ export default function LabCombosPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* AI Model */}
+            <div>
+              <label className="text-sm font-medium mb-1 block">🤖 AI Модель</label>
+              <Select value={genModel} onValueChange={setGenModel}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {AI_MODELS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Pro: точные числа (белок, ккал), лучшие SEO-тексты. Flash: быстрее, для тестов.
+              </p>
             </div>
           </div>
 

@@ -34,6 +34,8 @@ export interface LabComboPage {
   how_to_cook: { step: number; text: string; time_minutes?: number }[];
   optimization_tips: { icon: string; action: string; ingredient: string; tip: string }[];
   image_url: string | null;
+  process_image_url: string | null;
+  detail_image_url: string | null;
   smart_response: Record<string, unknown>;
   faq: { question: string; answer: string }[];
   status: 'draft' | 'published' | 'archived';
@@ -52,6 +54,8 @@ export interface GenerateComboRequest {
   cooking_time?: string;
   budget?: string;
   cuisine?: string;
+  /** AI model: "flash" (fast, default) or "pro" (smart, better SEO quality) */
+  model?: string;
 }
 
 export interface GeneratePopularRequest {
@@ -207,5 +211,36 @@ export async function saveComboImageUrl(
     body: JSON.stringify({ image_url: imageUrl }),
   });
   if (!res.ok) throw new Error(`Failed to save image URL: ${res.status}`);
+  return res.json();
+}
+
+/** GET /api/admin/lab-combos/:id/image-upload-url/:kind — presigned R2 upload URL for typed image */
+export async function getTypedImageUploadUrl(
+  token: string,
+  id: string,
+  kind: 'hero' | 'process' | 'detail',
+  contentType = 'image/webp',
+): Promise<{ upload_url: string; public_url: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/lab-combos/${id}/image-upload-url/${kind}?content_type=${encodeURIComponent(contentType)}`,
+    { headers: authHeaders(token) },
+  );
+  if (!res.ok) throw new Error(`Failed to get typed upload URL: ${res.status}`);
+  return res.json();
+}
+
+/** PUT /api/admin/lab-combos/:id/image-url/:kind — save typed image URL after R2 upload */
+export async function saveTypedImageUrl(
+  token: string,
+  id: string,
+  kind: 'hero' | 'process' | 'detail',
+  imageUrl: string,
+): Promise<LabComboPage> {
+  const res = await fetch(`${API_BASE}/api/admin/lab-combos/${id}/image-url/${kind}`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify({ image_url: imageUrl }),
+  });
+  if (!res.ok) throw new Error(`Failed to save typed image URL: ${res.status}`);
   return res.json();
 }
