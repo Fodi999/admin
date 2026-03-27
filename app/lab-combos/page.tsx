@@ -11,6 +11,8 @@ import {
   archiveCombo,
   deleteCombo,
   updateCombo,
+  getComboImageUploadUrl,
+  saveComboImageUrl,
   type LabComboPage,
   type GenerateComboRequest,
 } from "@/lib/lab-combos-api";
@@ -34,6 +36,8 @@ import {
   Pencil,
   Save,
   X,
+  ImageIcon,
+  Upload,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -126,6 +130,9 @@ export default function LabCombosPage() {
   const [editImageUrl, setEditImageUrl] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Image upload state
+  const [imageUploading, setImageUploading] = useState(false);
+
   const startEditing = (combo: LabComboPage) => {
     setEditTitle(combo.title);
     setEditDescription(combo.description);
@@ -160,6 +167,27 @@ export default function LabCombosPage() {
       toast.error("Save failed", { description: String(err) });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleImageUpload = async (file: File) => {
+    if (!token || !detailCombo) return;
+    setImageUploading(true);
+    try {
+      const { upload_url, public_url } = await getComboImageUploadUrl(token, detailCombo.id, file.type || "image/webp");
+      await fetch(upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "image/webp" },
+        body: file,
+      });
+      const updated = await saveComboImageUrl(token, detailCombo.id, public_url);
+      setDetailCombo(updated);
+      toast.success("Image uploaded!");
+      await loadCombos();
+    } catch (err: unknown) {
+      toast.error("Upload failed", { description: String(err) });
+    } finally {
+      setImageUploading(false);
     }
   };
 
@@ -602,10 +630,10 @@ export default function LabCombosPage() {
 
       {/* ── Detail / Preview / Edit Drawer ──────────────────────────── */}
       <Sheet open={!!detailCombo} onOpenChange={(open) => { if (!open) { setDetailCombo(null); setEditing(false); } }}>
-        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto px-4 sm:px-6">
           {detailCombo && (
             <>
-              <SheetHeader>
+              <SheetHeader className="pb-2">
                 <SheetTitle className="flex items-center gap-2 text-lg">
                   <FlaskConical className="h-5 w-5 text-primary" />
                   {editing ? "Edit Combo" : "Combo Detail"}
@@ -621,7 +649,7 @@ export default function LabCombosPage() {
                 </SheetTitle>
               </SheetHeader>
 
-              <div className="space-y-5 text-sm">
+              <div className="space-y-5 text-sm pb-6">
                 {/* Slug & Link */}
                 <div className="space-y-1">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Slug</p>
@@ -640,17 +668,39 @@ export default function LabCombosPage() {
                 </div>
 
                 {/* Image */}
-                {editing ? (
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Image URL</p>
-                    <Input value={editImageUrl} onChange={(e) => setEditImageUrl(e.target.value)} placeholder="https://..." className="text-xs" />
-                  </div>
-                ) : detailCombo.image_url ? (
-                  <div className="space-y-1">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
                     <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Image</p>
-                    <img src={detailCombo.image_url} alt={detailCombo.title} className="w-full max-h-48 object-cover rounded-lg" />
+                    <label className={`flex items-center gap-1.5 text-xs cursor-pointer px-2.5 py-1.5 rounded-lg border border-dashed transition-colors ${imageUploading ? "opacity-50 pointer-events-none" : "hover:border-primary hover:text-primary"}`}>
+                      {imageUploading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="h-3.5 w-3.5" />
+                      )}
+                      {imageUploading ? "Uploading…" : "Upload photo"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={imageUploading}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleImageUpload(file);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
                   </div>
-                ) : null}
+                  {editing ? (
+                    <Input value={editImageUrl} onChange={(e) => setEditImageUrl(e.target.value)} placeholder="https://..." className="text-xs" />
+                  ) : detailCombo.image_url ? (
+                    <img src={detailCombo.image_url} alt={detailCombo.title} className="w-full max-h-48 object-cover rounded-xl border" />
+                  ) : (
+                    <div className="flex items-center justify-center h-24 rounded-xl border border-dashed bg-muted/20 text-muted-foreground/40">
+                      <ImageIcon className="h-8 w-8" />
+                    </div>
+                  )}
+                </div>
 
                 {/* Ingredients */}
                 <div className="space-y-1">
@@ -884,8 +934,8 @@ export default function LabCombosPage() {
 
       {/* ── Generate Drawer ──────────────────────────────────────────── */}
       <Sheet open={showGenerate} onOpenChange={setShowGenerate}>
-        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
-          <SheetHeader>
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto px-4 sm:px-6">
+          <SheetHeader className="pb-2">
             <SheetTitle className="flex items-center gap-2">
               <FlaskConical className="h-5 w-5 text-primary" />
               Generate Combo Page

@@ -180,3 +180,32 @@ export async function updateCombo(
   }
   return res.json();
 }
+
+/** GET /api/admin/lab-combos/:id/image-upload-url — presigned R2 upload URL */
+export async function getComboImageUploadUrl(
+  token: string,
+  id: string,
+  contentType = 'image/webp',
+): Promise<{ upload_url: string; public_url: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/lab-combos/${id}/image-upload-url?content_type=${encodeURIComponent(contentType)}`,
+    { headers: authHeaders(token) },
+  );
+  if (!res.ok) throw new Error(`Failed to get upload URL: ${res.status}`);
+  return res.json();
+}
+
+/** PUT /api/admin/lab-combos/:id/image-url — save public URL after R2 upload */
+export async function saveComboImageUrl(
+  token: string,
+  id: string,
+  imageUrl: string,
+): Promise<LabComboPage> {
+  const res = await fetch(`${API_BASE}/api/admin/lab-combos/${id}/image-url`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify({ image_url: imageUrl }),
+  });
+  if (!res.ok) throw new Error(`Failed to save image URL: ${res.status}`);
+  return res.json();
+}
