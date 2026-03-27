@@ -972,10 +972,10 @@ export default function LabCombosPage() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1 block">Goal</label>
-                <Select value={genGoal} onValueChange={setGenGoal}>
+                <Select value={genGoal || "__none__"} onValueChange={(v) => setGenGoal(v === "__none__" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {GOALS.map((g) => (
                       <SelectItem key={g} value={g}>{g.replace(/_/g, " ")}</SelectItem>
                     ))}
@@ -987,10 +987,10 @@ export default function LabCombosPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-sm font-medium mb-1 block">Meal Type</label>
-                <Select value={genMealType} onValueChange={setGenMealType}>
+                <Select value={genMealType || "__none__"} onValueChange={(v) => setGenMealType(v === "__none__" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {MEAL_TYPES.map((m) => (
                       <SelectItem key={m} value={m}>{m}</SelectItem>
                     ))}
@@ -999,10 +999,10 @@ export default function LabCombosPage() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1 block">Diet</label>
-                <Select value={genDiet} onValueChange={setGenDiet}>
+                <Select value={genDiet || "__none__"} onValueChange={(v) => setGenDiet(v === "__none__" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {DIETS.map((d) => (
                       <SelectItem key={d} value={d}>{d.replace(/_/g, " ")}</SelectItem>
                     ))}
@@ -1014,10 +1014,10 @@ export default function LabCombosPage() {
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-sm font-medium mb-1 block">Time</label>
-                <Select value={genCookingTime} onValueChange={setGenCookingTime}>
+                <Select value={genCookingTime || "__none__"} onValueChange={(v) => setGenCookingTime(v === "__none__" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Any</SelectItem>
+                    <SelectItem value="__none__">Any</SelectItem>
                     {COOKING_TIMES.map((t) => (
                       <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
@@ -1026,10 +1026,10 @@ export default function LabCombosPage() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1 block">Budget</label>
-                <Select value={genBudget} onValueChange={setGenBudget}>
+                <Select value={genBudget || "__none__"} onValueChange={(v) => setGenBudget(v === "__none__" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Any</SelectItem>
+                    <SelectItem value="__none__">Any</SelectItem>
                     {BUDGETS.map((b) => (
                       <SelectItem key={b} value={b}>{b}</SelectItem>
                     ))}
@@ -1038,10 +1038,10 @@ export default function LabCombosPage() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1 block">Cuisine</label>
-                <Select value={genCuisine} onValueChange={setGenCuisine}>
+                <Select value={genCuisine || "__none__"} onValueChange={(v) => setGenCuisine(v === "__none__" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Any</SelectItem>
+                    <SelectItem value="__none__">Any</SelectItem>
                     {CUISINES.map((c) => (
                       <SelectItem key={c} value={c}>{c}</SelectItem>
                     ))}
