@@ -401,7 +401,7 @@ export default function SeoPage() {
             <Settings className="w-4 h-4 mr-2" /> Настройки
           </Button>
           <Button size="sm" onClick={() => setShowGenerate(true)}>
-            <Zap className="w-4 h-4 mr-2" /> Сгенерировать
+            <Zap className="w-4 h-4 mr-2" /> + Создать страницу
           </Button>
         </div>
       </div>
@@ -1569,118 +1569,635 @@ function PreviewDialog({ page, token, onClose, onPublished }: { page: IntentPage
 }
 
 // ══════════════════════════════════════════════════════════════════
-// ДИАЛОГ ГЕНЕРАЦИИ
+// ДИАЛОГ СОЗДАНИЯ СТРАНИЦЫ (пошаговый)
 // ══════════════════════════════════════════════════════════════════
+//
+// Шаг 1 — Выбор языка, типа, ингредиента → «Генерировать»
+// Шаг 2 — Превью AI-контента, редактирование, загрузка фото
+// Шаг 3 — «Сохранить в черновик»
+// Шаг 4 — «Опубликовать» (quality gate ≥ 3/5)
+
+type CreateStep = "setup" | "preview" | "saved";
 
 function GenerateDialog({ token, onClose, onDone }: { token: string; onClose: () => void; onDone: () => void }) {
+  // ── Step 1: setup ──
+  const [step, setStep] = useState<CreateStep>("setup");
+  const [locale, setLocale] = useState("pl");
   const [intentType, setIntentType] = useState("question");
   const [entityA, setEntityA] = useState("");
   const [entityB, setEntityB] = useState("");
-  const [locale, setLocale] = useState("en");
   const [generating, setGenerating] = useState(false);
-  const [result, setResult] = useState<BatchResult | null>(null);
 
-  // Search in the selected locale language so user sees their language names
-  const searchLang = locale;
+  // ── Step 2: preview / edit ──
+  const [page, setPage] = useState<IntentPage | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [slug, setSlug] = useState("");
+  const [editableBlocks, setEditableBlocks] = useState<ContentBlock[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
+  const imageBlocks = editableBlocks.filter(
+    (b): b is ContentBlock & { type: "image" } => b.type === "image"
+  );
+  const uploadedCount = imageBlocks.filter((b) => "src" in b && b.src).length;
+
+  const updateBlock = (index: number, changes: Partial<ContentBlock>) => {
+    setEditableBlocks((prev) =>
+      prev.map((b, i) => (i === index ? ({ ...b, ...changes } as ContentBlock) : b))
+    );
+  };
+
+  // ── Generate one page ──
   const handleGenerate = async () => {
-    if (!entityA.trim()) { toast.error("Укажите ингредиент / продукт"); return; }
+    if (!entityA.trim()) {
+      toast.error("Укажите ингредиент / продукт");
+      return;
+    }
     setGenerating(true);
     try {
-      const r = await generateBatch(token, {
+      const created = await generateIntentPage(token, {
         intent_type: intentType,
         entity_a: entityA.trim().toLowerCase(),
-        entity_b: entityB.trim().toLowerCase() || undefined,
+        entity_b: intentType === "comparison" && entityB.trim() ? entityB.trim().toLowerCase() : undefined,
         locale,
       });
-      setResult(r);
-      toast.success(`Создано: ${r.generated} · Пропущено: ${r.skipped} · Ошибок: ${r.errors}`);
+      setPage(created);
+      setTitle(created.title);
+      setDescription(created.description);
+      setAnswer(created.answer);
+      setSlug(created.slug);
+      setEditableBlocks(Array.isArray(created.content_blocks) ? created.content_blocks : []);
+      setStep("preview");
+      toast.success("Страница сгенерирована! Проверьте и добавьте фото.");
     } catch (err) {
-      toast.error(String(err));
+      toast.error("Ошибка генерации: " + String(err));
     } finally {
       setGenerating(false);
     }
   };
 
+  // ── Save to draft ──
+  const handleSaveDraft = async () => {
+    if (!page) return;
+    setSaving(true);
+    try {
+      const updated = await updateIntentPage(token, page.id, {
+        title,
+        description,
+        answer,
+        slug,
+        content_blocks: editableBlocks,
+      });
+      setPage(updated);
+      setStep("saved");
+      toast.success("Сохранено в черновик ✅");
+    } catch (err) {
+      toast.error("Ошибка сохранения: " + String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Publish ──
+  const handlePublish = async () => {
+    if (!page) return;
+    setPublishing(true);
+    try {
+      // save first to ensure latest edits are persisted
+      await updateIntentPage(token, page.id, {
+        title,
+        description,
+        answer,
+        slug,
+        content_blocks: editableBlocks,
+      });
+      await publishIntentPage(token, page.id);
+      toast.success("Опубликовано! 🚀 Страница доступна на сайте.");
+      onDone();
+    } catch (err) {
+      toast.error("Ошибка публикации: " + String(err));
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  // ── Image uploaded callback ──
+  const handleImageUploaded = (updated: IntentPage) => {
+    setPage(updated);
+    if (Array.isArray(updated.content_blocks)) {
+      setEditableBlocks((prev) =>
+        prev.map((b) => {
+          if (b.type !== "image") return b;
+          const fresh = (updated.content_blocks as ContentBlock[]).find(
+            (u): u is ContentBlock & { type: "image" } =>
+              u.type === "image" && u.key === b.key
+          );
+          return fresh ? { ...b, src: fresh.src } : b;
+        })
+      );
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════════
+  // RENDER
+  // ════════════════════════════════════════════════════════════════
+
   return (
     <Sheet open onOpenChange={onClose}>
-      <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-primary" /> Генерация SEO-пакета
-          </SheetTitle>
-        </SheetHeader>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Тип интента</Label>
-              <Select value={intentType} onValueChange={setIntentType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="question">❓ Вопрос</SelectItem>
-                  <SelectItem value="goal">🎯 Цель</SelectItem>
-                  <SelectItem value="comparison">⚖️ Сравнение</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Язык</Label>
-              <Select value={locale} onValueChange={setLocale}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en">🇬🇧 English</SelectItem>
-                  <SelectItem value="pl">🇵🇱 Polski</SelectItem>
-                  <SelectItem value="ru">🇷🇺 Русский</SelectItem>
-                  <SelectItem value="uk">🇺🇦 Українська</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div>
-            <Label>Продукт / Ингредиент</Label>
-            <p className="text-xs text-muted-foreground mb-1.5">Введите 2+ буквы — появится список из базы</p>
-            <IngredientAutocomplete
-              value={entityA}
-              lang={searchLang}
-              onChange={(v) => setEntityA(v)}
-              placeholder="напр. salmon, almonds, авокадо..."
-              disabled={generating}
-            />
-          </div>
-          {intentType === "comparison" && (
-            <div>
-              <Label>Сравнить с</Label>
-              <p className="text-xs text-muted-foreground mb-1.5">Введите 2+ буквы — появится список</p>
-              <IngredientAutocomplete
-                value={entityB}
-                lang={searchLang}
-                onChange={(v) => setEntityB(v)}
-                placeholder="напр. cashews, tuna, масло оливы..."
-                disabled={generating}
-              />
-            </div>
-          )}
-          {result && (
-            <div className="rounded-lg bg-muted/50 p-3 space-y-2 text-sm max-h-[200px] overflow-y-auto">
-              <div className="font-medium">✅ {result.generated} создано · ⏭️ {result.skipped} пропущено · ❌ {result.errors} ошибок</div>
-              {result.results.map((r, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  {r.status === "ok" ? <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> : r.status === "skipped" ? <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" /> : <AlertCircle className="w-3 h-3 text-red-500 shrink-0" />}
-                  <span className="font-mono truncate">{r.page?.slug || r.sub_intent}</span>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-2xl overflow-y-auto p-0 gap-0"
+      >
+        {/* ── Header ── */}
+        <div className="sticky top-0 z-10 bg-background border-b px-6 py-4">
+          <SheetHeader className="p-0">
+            <SheetTitle className="flex items-center gap-2 text-lg">
+              <Zap className="w-5 h-5 text-primary" />
+              {step === "setup" && "Создать SEO-страницу"}
+              {step === "preview" && "Проверка и фото"}
+              {step === "saved" && "Черновик сохранён"}
+            </SheetTitle>
+          </SheetHeader>
+
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 mt-3">
+            {[
+              { key: "setup", label: "1. Настройка", icon: "⚙️" },
+              { key: "preview", label: "2. Проверка + Фото", icon: "👁" },
+              { key: "saved", label: "3. Публикация", icon: "🚀" },
+            ].map((s, i) => (
+              <div key={s.key} className="flex items-center gap-1.5">
+                {i > 0 && <div className="w-6 h-px bg-border" />}
+                <div
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    step === s.key
+                      ? "bg-primary text-primary-foreground"
+                      : (step === "preview" && s.key === "setup") || (step === "saved" && s.key !== "saved")
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300"
+                        : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  <span>{s.icon}</span>
+                  <span className="hidden sm:inline">{s.label}</span>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* ══════════════════════════════════════════════════════
+             STEP 1: SETUP
+          ══════════════════════════════════════════════════════ */}
+          {step === "setup" && (
+            <>
+              {/* Язык — первый выбор */}
+              <section className="space-y-2">
+                <Label className="text-base font-semibold">🌐 Выберите язык</Label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { value: "pl", flag: "🇵🇱", label: "Polski" },
+                    { value: "en", flag: "🇬🇧", label: "English" },
+                    { value: "ru", flag: "🇷🇺", label: "Русский" },
+                    { value: "uk", flag: "🇺🇦", label: "Українська" },
+                  ].map((l) => (
+                    <button
+                      key={l.value}
+                      onClick={() => setLocale(l.value)}
+                      className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all ${
+                        locale === l.value
+                          ? "border-primary bg-primary/5 shadow-sm"
+                          : "border-transparent bg-muted/50 hover:bg-muted"
+                      }`}
+                    >
+                      <span className="text-2xl">{l.flag}</span>
+                      <span className="text-xs font-medium">{l.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* Тип интента */}
+              <section className="space-y-2">
+                <Label className="text-base font-semibold">📝 Тип страницы</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: "question", icon: "❓", label: "Вопрос", desc: "Полезен ли лосось?" },
+                    { value: "goal", icon: "🎯", label: "Цель", desc: "Лучшее для диеты" },
+                    { value: "comparison", icon: "⚖️", label: "Сравнение", desc: "Лосось vs тунец" },
+                  ].map((t) => (
+                    <button
+                      key={t.value}
+                      onClick={() => setIntentType(t.value)}
+                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-center ${
+                        intentType === t.value
+                          ? "border-primary bg-primary/5 shadow-sm"
+                          : "border-transparent bg-muted/50 hover:bg-muted"
+                      }`}
+                    >
+                      <span className="text-xl">{t.icon}</span>
+                      <span className="text-sm font-medium">{t.label}</span>
+                      <span className="text-[10px] text-muted-foreground">{t.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* Ингредиент */}
+              <section className="space-y-2">
+                <Label className="text-base font-semibold">🥑 Продукт / Ингредиент</Label>
+                <p className="text-xs text-muted-foreground">
+                  Введите 2+ буквы — появится список из базы ({locale.toUpperCase()})
+                </p>
+                <IngredientAutocomplete
+                  value={entityA}
+                  lang={locale}
+                  onChange={(v) => setEntityA(v)}
+                  placeholder="напр. salmon, almonds, авокадо..."
+                  disabled={generating}
+                />
+              </section>
+
+              {/* Сравнить с (только для comparison) */}
+              {intentType === "comparison" && (
+                <section className="space-y-2">
+                  <Label className="text-base font-semibold">⚖️ Сравнить с</Label>
+                  <IngredientAutocomplete
+                    value={entityB}
+                    lang={locale}
+                    onChange={(v) => setEntityB(v)}
+                    placeholder="напр. cashews, tuna, масло оливы..."
+                    disabled={generating}
+                  />
+                </section>
+              )}
+
+              {/* Кнопка генерации */}
+              <Button
+                className="w-full rounded-xl h-12 text-base"
+                onClick={handleGenerate}
+                disabled={generating || !entityA.trim()}
+              >
+                {generating ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    AI генерирует страницу…
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-5 h-5 mr-2" />
+                    Сгенерировать страницу
+                  </>
+                )}
+              </Button>
+
+              {generating && (
+                <div className="text-center text-xs text-muted-foreground animate-pulse">
+                  ⏳ Gemini создаёт контент: заголовок, описание, 16 блоков, 4 FAQ…
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ══════════════════════════════════════════════════════
+             STEP 2: PREVIEW + EDIT + PHOTOS
+          ══════════════════════════════════════════════════════ */}
+          {step === "preview" && page && (
+            <>
+              {/* SEO мета */}
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  SEO Мета
+                </h3>
+                <div>
+                  <Label>
+                    Заголовок{" "}
+                    <span
+                      className={
+                        title.length >= 50 && title.length <= 60
+                          ? "text-emerald-600"
+                          : title.length >= 40
+                            ? "text-amber-600"
+                            : "text-red-500"
+                      }
+                    >
+                      ({title.length}/60)
+                    </span>
+                  </Label>
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+                </div>
+                <div>
+                  <Label>
+                    Описание{" "}
+                    <span
+                      className={
+                        description.length >= 120 && description.length <= 155
+                          ? "text-emerald-600"
+                          : description.length >= 80
+                            ? "text-amber-600"
+                            : "text-red-500"
+                      }
+                    >
+                      ({description.length}/155)
+                    </span>
+                  </Label>
+                  <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+                </div>
+                <div>
+                  <Label>Slug</Label>
+                  <Input
+                    value={slug}
+                    onChange={(e) => setSlug(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* Ответ */}
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Контент
+                </h3>
+                <div>
+                  <Label>
+                    Ответ{" "}
+                    <span
+                      className={
+                        answer.length >= 400 && answer.length <= 800
+                          ? "text-emerald-600"
+                          : answer.length >= 200
+                            ? "text-amber-600"
+                            : "text-red-500"
+                      }
+                    >
+                      ({answer.length} симв)
+                    </span>
+                  </Label>
+                  <textarea
+                    value={answer}
+                    onChange={(e) => setAnswer(e.target.value)}
+                    className="mt-1 w-full text-sm bg-muted/30 rounded-lg p-3 min-h-[100px] max-h-[200px] border resize-y"
+                  />
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* Фото — 4 слота */}
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    📸 Фото для статьи
+                  </h3>
+                  <Badge
+                    variant="secondary"
+                    className={
+                      uploadedCount === imageBlocks.length && imageBlocks.length > 0
+                        ? "bg-emerald-500/15 text-emerald-600"
+                        : "bg-amber-500/15 text-amber-600"
+                    }
+                  >
+                    {uploadedCount}/{imageBlocks.length}
+                  </Badge>
+                </div>
+                {imageBlocks.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    {imageBlocks.map((block) => (
+                      <ImageUploadSlot
+                        key={block.key}
+                        pageId={page.id}
+                        imageKey={block.key}
+                        src={block.src}
+                        alt={block.alt}
+                        token={token}
+                        onUploaded={handleImageUploaded}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-muted/30 rounded-lg p-6 text-center text-muted-foreground text-sm">
+                    <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    AI не создал блоки с фото. Сохраните и попробуйте перегенерировать.
+                  </div>
+                )}
+              </section>
+
+              <Separator />
+
+              {/* Превью блоков (свёрнутое по умолчанию) */}
+              {editableBlocks.length > 0 && (
+                <details className="group">
+                  <summary className="cursor-pointer text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                    📄 Превью статьи ({editableBlocks.length} блоков)
+                    <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="mt-3 bg-muted/20 rounded-lg p-4 space-y-3 text-sm">
+                    {editableBlocks.map((block, i) => {
+                      if (block.type === "heading")
+                        return (
+                          <div key={i} className="space-y-1">
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">
+                              H{block.level}
+                            </span>
+                            <input
+                              value={block.text}
+                              onChange={(e) => updateBlock(i, { text: e.target.value })}
+                              className={`w-full bg-background border rounded px-2 py-1 ${
+                                block.level === 1 ? "text-base font-bold" : "text-sm font-semibold"
+                              }`}
+                            />
+                          </div>
+                        );
+                      if (block.type === "text")
+                        return (
+                          <div key={i} className="space-y-1">
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">
+                              Текст
+                            </span>
+                            <textarea
+                              value={block.content}
+                              onChange={(e) => updateBlock(i, { content: e.target.value })}
+                              rows={Math.max(2, Math.ceil(block.content.length / 80))}
+                              className="w-full bg-background border rounded px-2 py-1 text-sm text-muted-foreground leading-relaxed resize-y"
+                            />
+                          </div>
+                        );
+                      if (block.type === "image")
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 py-1 text-xs text-muted-foreground border border-dashed rounded px-2"
+                          >
+                            <ImageIcon className="w-4 h-4 flex-shrink-0" />
+                            <span className="font-mono">[{block.key}]</span>
+                            {block.src ? (
+                              <Badge
+                                variant="secondary"
+                                className="bg-emerald-500/15 text-emerald-600 text-[10px]"
+                              >
+                                ✓ загружено
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="secondary"
+                                className="bg-amber-500/15 text-amber-600 text-[10px]"
+                              >
+                                ⬆ нужно фото
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      return null;
+                    })}
+                  </div>
+                </details>
+              )}
+
+              {/* FAQ */}
+              {page.faq && page.faq.length > 0 && (
+                <details className="group">
+                  <summary className="cursor-pointer text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                    💬 FAQ ({page.faq.length})
+                    <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="mt-3 space-y-2">
+                    {page.faq.map((f, i) => (
+                      <div key={i} className="bg-muted/30 rounded-lg p-3 text-sm">
+                        <div className="font-medium">{f.question}</div>
+                        <div className="text-muted-foreground mt-1 text-xs">{f.answer}</div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+
+              {/* Кнопки: Сохранить в черновик */}
+              <div className="space-y-2 pt-2">
+                <Button
+                  className="w-full rounded-xl h-12 text-base"
+                  onClick={handleSaveDraft}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Сохраняем…
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-5 h-5 mr-2" /> Сохранить в черновик
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full text-xs text-muted-foreground"
+                  onClick={() => setStep("setup")}
+                >
+                  ← Вернуться к настройкам
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* ══════════════════════════════════════════════════════
+             STEP 3: SAVED — можно опубликовать
+          ══════════════════════════════════════════════════════ */}
+          {step === "saved" && page && (
+            <>
+              {/* Успех */}
+              <div className="text-center py-6 space-y-3">
+                <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h3 className="text-xl font-bold">Черновик сохранён!</h3>
+                <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                  Страница «{title}» сохранена как черновик. Вы можете опубликовать её сейчас или позже.
+                </p>
+              </div>
+
+              {/* SERP превью */}
+              <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border shadow-sm space-y-0.5">
+                <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <img
+                    src="https://www.google.com/s2/favicons?domain=dima-fomin.pl&sz=16"
+                    alt=""
+                    className="w-4 h-4 rounded-full"
+                  />
+                  <span>dima-fomin.pl</span>
+                  <span className="text-zinc-400">›</span>
+                  <span>{locale}</span>
+                  <span className="text-zinc-400">›</span>
+                  <span className="truncate">{slug}</span>
+                </div>
+                <h3 className="text-[#1a0dab] dark:text-blue-400 text-lg font-normal leading-snug">
+                  {title}
+                </h3>
+                <p className="text-[13px] text-zinc-600 dark:text-zinc-400 leading-relaxed line-clamp-2">
+                  {description}
+                </p>
+              </div>
+
+              {/* Статистика */}
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-muted/50 rounded-xl p-3">
+                  <div className="text-lg font-bold">{editableBlocks.length}</div>
+                  <div className="text-xs text-muted-foreground">Блоков</div>
+                </div>
+                <div className="bg-muted/50 rounded-xl p-3">
+                  <div className="text-lg font-bold">
+                    {uploadedCount}/{imageBlocks.length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Фото</div>
+                </div>
+                <div className="bg-muted/50 rounded-xl p-3">
+                  <div className="text-lg font-bold">{page.faq?.length || 0}</div>
+                  <div className="text-xs text-muted-foreground">FAQ</div>
+                </div>
+              </div>
+
+              {/* Кнопки */}
+              <div className="space-y-2 pt-2">
+                <Button
+                  className="w-full rounded-xl h-12 text-base"
+                  onClick={handlePublish}
+                  disabled={publishing}
+                >
+                  {publishing ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Публикуем…
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="w-5 h-5 mr-2" /> Опубликовать сейчас
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full rounded-xl"
+                  onClick={onDone}
+                >
+                  Оставить черновик и выйти
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full text-xs text-muted-foreground"
+                  onClick={() => setStep("preview")}
+                >
+                  ← Вернуться к редактированию
+                </Button>
+              </div>
+            </>
           )}
         </div>
-        <SheetFooter className="pt-4">
-          {result ? (
-            <Button className="w-full rounded-xl" onClick={onDone}>Готово</Button>
-          ) : (
-            <Button className="w-full rounded-xl" onClick={handleGenerate} disabled={generating}>
-              {generating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Генерация...</> : <><Zap className="w-4 h-4 mr-2" /> Сгенерировать</>}
-            </Button>
-          )}
-        </SheetFooter>
       </SheetContent>
     </Sheet>
   );
