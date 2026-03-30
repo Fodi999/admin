@@ -105,6 +105,7 @@ import {
 } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { IngredientAutocomplete } from "@/components/ingredient-autocomplete";
+import { getLabCombos, type LabComboPage } from "@/lib/lab-combos-api";
 
 // ── Конфигурация ─────────────────────────────────────────────────
 
@@ -156,7 +157,9 @@ export default function SeoPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Dialogs
+  const [showGenerate, setShowGenerate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDetail, setShowDetail] = useState<IntentPage | null>(null);
   const [showPreview, setShowPreview] = useState<IntentPage | null>(null);
 
   // ── Загрузка данных ────────────────────────────────────────────
@@ -404,7 +407,7 @@ export default function SeoPage() {
           <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
             <Settings className="w-4 h-4 mr-2" /> Настройки
           </Button>
-          <Button size="sm" onClick={() => router.push("/seo/new")}>
+          <Button size="sm" onClick={() => setShowGenerate(true)}>
             <Zap className="w-4 h-4 mr-2" /> Сгенерировать
           </Button>
         </div>
@@ -597,7 +600,7 @@ export default function SeoPage() {
                           onEnqueue={() => handleAction(enqueueIntentPage, page.id, "Добавлено в очередь")}
                           onArchive={() => handleAction(archiveIntentPage, page.id, "Отправлено в архив")}
                           onDelete={() => handleDelete(page.id)}
-                          onDetail={() => router.push(`/seo/${page.id}`)}
+                          onDetail={() => setShowDetail(page)}
                           onPreview={() => setShowPreview(page)}
                         />
                       ))
@@ -610,9 +613,18 @@ export default function SeoPage() {
         </>
       )}
 
+      {/* ── Lab Combo SEO Pages ── */}
+      <LabCombosSection token={token} router={router} />
+
       {/* Диалоги */}
+      {showGenerate && token && (
+        <GenerateDialog token={token} onClose={() => setShowGenerate(false)} onDone={() => { setShowGenerate(false); refresh(); }} />
+      )}
       {showSettings && token && settings && (
         <SettingsDialog token={token} settings={settings} onClose={() => setShowSettings(false)} onSaved={(s) => { setSettings(s); setShowSettings(false); toast.success("Настройки сохранены"); }} />
+      )}
+      {showDetail && token && (
+        <DetailDialog page={showDetail} token={token} onClose={() => setShowDetail(null)} onSaved={() => { setShowDetail(null); refresh(); }} />
       )}
       {showPreview && token && (
         <PreviewDialog page={showPreview} token={token} onClose={() => setShowPreview(null)} onPublished={() => { setShowPreview(null); refresh(); }} />
@@ -2079,5 +2091,178 @@ function DetailDialog({ page: initialPage, token, onClose, onSaved }: {
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// LAB COMBOS SECTION — SEO страницы комбинаций ингредиентов
+// ══════════════════════════════════════════════════════════════════
+
+const COMBO_BLOG_BASE = "https://dima-fomin.pl";
+
+function LabCombosSection({
+  token,
+  router,
+}: {
+  token: string | null;
+  router: ReturnType<typeof import("next/navigation").useRouter>;
+}) {
+  const [combos, setCombos] = useState<LabComboPage[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!token) return;
+    getLabCombos(token, { limit: 100 })
+      .then(setCombos)
+      .catch(() => toast.error("Ошибка загрузки Lab Combos"))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const published = combos.filter((c) => c.status === "published");
+  const draft     = combos.filter((c) => c.status === "draft");
+
+  return (
+    <div className="space-y-4 pt-2">
+      {/* Заголовок секции */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="h-5 w-1 rounded-full bg-violet-500" />
+          <div>
+            <h2 className="text-lg font-bold tracking-tight flex items-center gap-2">
+              🧪 Lab Combo Pages
+              <Badge className="bg-violet-500/10 text-violet-600 border-none text-[10px] font-bold uppercase tracking-widest">
+                {combos.length} страниц
+              </Badge>
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Готовые SEO-страницы комбинаций ингредиентов — чистые URL для Google
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              Published: <strong className="text-foreground">{published.length}</strong>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" />
+              Draft: <strong className="text-foreground">{draft.length}</strong>
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded-xl text-xs"
+            onClick={() => router.push("/lab-combos")}
+          >
+            Управление →
+          </Button>
+        </div>
+      </div>
+
+      {/* Таблица */}
+      <Card className="rounded-2xl border border-border/40 overflow-hidden">
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="flex items-center justify-center py-10 gap-3 text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Загрузка...</span>
+            </div>
+          ) : combos.length === 0 ? (
+            <div className="py-10 text-center text-muted-foreground text-sm">
+              Нет страниц. Перейдите в <button onClick={() => router.push("/lab-combos")} className="text-primary underline">Lab Combos</button> для генерации.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border/40 bg-muted/20">
+                  <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Slug / URL</th>
+                  <th className="text-left py-3 px-2 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Locale</th>
+                  <th className="text-left py-3 px-2 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Goal</th>
+                  <th className="text-left py-3 px-2 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Meal</th>
+                  <th className="text-left py-3 px-2 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Score</th>
+                  <th className="text-left py-3 px-2 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Статус</th>
+                  <th className="text-left py-3 px-2 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Создано</th>
+                  <th className="py-3 px-4" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/30">
+                {combos.map((combo) => {
+                  const url = `${COMBO_BLOG_BASE}/${combo.locale}/lab/${combo.slug}`;
+                  return (
+                    <tr key={combo.id} className="hover:bg-muted/10 transition-colors group">
+                      <td className="py-3 px-4">
+                        <div className="font-mono text-xs text-primary font-semibold truncate max-w-[280px]">
+                          /{combo.locale}/lab/{combo.slug}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground/60 truncate max-w-[280px] mt-0.5">
+                          {combo.title || "—"}
+                        </div>
+                      </td>
+                      <td className="py-3 px-2">
+                        <span className="text-base">{LOCALE_FLAGS[combo.locale] ?? combo.locale}</span>
+                      </td>
+                      <td className="py-3 px-2">
+                        <Badge variant="secondary" className="text-[10px] font-medium rounded-md capitalize">
+                          {combo.goal ?? "—"}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-2 text-xs text-muted-foreground capitalize">
+                        {combo.meal_type ?? "—"}
+                      </td>
+                      <td className="py-3 px-2">
+                        <span className={`text-xs font-bold tabular-nums ${combo.quality_score >= 80 ? "text-emerald-500" : combo.quality_score >= 50 ? "text-amber-500" : "text-red-500"}`}>
+                          {combo.quality_score}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2">
+                        <Badge className={`text-[10px] font-semibold rounded-md border ${
+                          combo.status === "published"
+                            ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                            : combo.status === "archived"
+                            ? "bg-zinc-500/10 text-zinc-500 border-zinc-500/20"
+                            : "bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
+                        }`}>
+                          {combo.status === "published" ? "✅ Published" : combo.status === "archived" ? "📦 Archived" : "📝 Draft"}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-2 text-xs text-muted-foreground tabular-nums">
+                        {new Date(combo.created_at).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {combo.status === "published" && (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Открыть в блоге"
+                            >
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-lg">
+                                <ExternalLink className="w-3.5 h-3.5 text-emerald-500" />
+                              </Button>
+                            </a>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 rounded-lg"
+                            title="Управление"
+                            onClick={() => router.push("/lab-combos")}
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
