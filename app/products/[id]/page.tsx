@@ -551,6 +551,17 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     if (!token) { router.push('/login'); return; }
     setAiLoading(true); setMessage(null);
     try {
+      // ── Pre-save: sync form → DB so AI sees current field state ──
+      // If user cleared descriptions in the form but didn't save,
+      // AI would still see old filled values from DB and skip them.
+      const presaveData: Record<string, unknown> = {};
+      // Always sync description fields (even empty string = "clear it")
+      presaveData.description_en = form.description_en ?? '';
+      presaveData.description_ru = form.description_ru ?? '';
+      presaveData.description_pl = form.description_pl ?? '';
+      presaveData.description_uk = form.description_uk ?? '';
+      await updateProduct(token, id, presaveData as UpdateProductRequest);
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ai: any = await aiAutofillProduct(token, id);
 

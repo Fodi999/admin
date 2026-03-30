@@ -1062,6 +1062,50 @@ export interface CreateDraftResponse {
   corrections: DraftCorrection[];
 }
 
+// ── Suggest Products ──────────────────────────────────────────
+
+export interface ProductSuggestion {
+  name_en: string;
+  name_ru: string;
+  name_pl: string;
+  emoji: string;
+  product_type: string;
+  why_add: string;
+  calories_hint: number | null;
+}
+
+export interface SuggestProductsResponse {
+  suggestions: ProductSuggestion[];
+  query: string;
+  cached: boolean;
+  attempts: number;
+}
+
+/**
+ * POST /api/admin/catalog/ai/suggest-products
+ *
+ * AI suggests 5 product candidates for the catalog.
+ * Admin picks one → send to create-product-draft.
+ */
+export async function aiSuggestProducts(
+  token: string,
+  query: string,
+): Promise<SuggestProductsResponse> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/catalog/ai/suggest-products`,
+    {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`AI suggest failed: ${text}`);
+  }
+  return res.json();
+}
+
 /**
  * POST /api/admin/catalog/ai/create-product-draft
  *
