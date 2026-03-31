@@ -343,9 +343,40 @@ export default function NewLabComboPage() {
 
       <StepBar current={step} />
 
-      {/* ═══ STEP 0: Ingredient Picker ═════════════════════════════════ */}
+      {/* ═══ STEP 0: Dish Name + Ingredient Picker ══════════════════ */}
       {step === 0 && token && (
         <div className="space-y-4">
+          {/* 🧠 Dish Name — PRIMARY LOGIC DRIVER (first thing user sees) */}
+          <Card className="border-primary/40 bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <ChefHat className="h-5 w-5 text-primary" />
+                🧠 Название блюда
+                <Badge variant="default" className="text-[10px] ml-auto">
+                  Определяет способ приготовления
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                Название = логика приготовления. «Жареный рис» → wok/pan + high heat.
+                «Боул с лососем» → сборка без готовки. «Запечённая курица» → духовка.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <input
+                type="text"
+                value={dishName}
+                onChange={(e) => setDishName(e.target.value)}
+                placeholder='Например: "Жареный рис с лососем в азиатском стиле"'
+                className="w-full h-12 rounded-lg border bg-background px-4 text-base font-medium placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+              <p className="text-[11px] text-muted-foreground mt-2 space-y-0.5">
+                <span className="block">💡 <strong>Название определяет:</strong> технику приготовления, последовательность действий, стиль блюда</span>
+                <span className="block">✅ Хорошо: «Жареный рис с лососем», «Средиземноморский салат с тунцом», «Овсянка с бананом и орехами»</span>
+                <span className="block">❌ Плохо: пустое поле — AI не поймёт КАК готовить, только ИЗ ЧЕГО</span>
+              </p>
+            </CardContent>
+          </Card>
+
           <Card className="border-primary/40">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-xl">
@@ -396,20 +427,25 @@ export default function NewLabComboPage() {
       {/* ═══ STEP 1: Parameters ════════════════════════════════════════ */}
       {step === 1 && (
         <div className="space-y-4">
-          {/* Ingredients summary — structured */}
+          {/* Summary: dish name + ingredients */}
           <Card className="bg-muted/30 border-muted">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <ChefHat className="h-4 w-4 text-primary" />
                   <span className="text-sm font-semibold">
-                    Блюдо из {selectedIngredients.length} ингредиентов
+                    {dishName ? `🧠 ${dishName}` : `Блюдо из ${selectedIngredients.length} ингредиентов`}
                   </span>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => setStep(0)}>
                   Изменить
                 </Button>
               </div>
+              {dishName && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  {selectedIngredients.length} ингредиентов
+                </p>
+              )}
               <div className="space-y-1">
                 {selectedIngredients.map((ing) => (
                   <div key={ing.id} className="flex items-center gap-2 text-sm">
@@ -446,37 +482,6 @@ export default function NewLabComboPage() {
                   <Badge variant="outline" className="text-[10px]">UK</Badge>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* 🧠 Dish Name — PRIMARY LOGIC DRIVER */}
-          <Card className="border-primary/40 bg-primary/5">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ChefHat className="h-4 w-4 text-primary" />
-                🧠 Название блюда
-                <Badge variant="default" className="text-[10px] ml-auto">
-                  Определяет способ приготовления
-                </Badge>
-              </CardTitle>
-              <CardDescription>
-                Название = логика приготовления. «Жареный рис» → wok/pan + high heat.
-                «Боул с лососем» → сборка без готовки. «Запечённая курица» → духовка.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <input
-                type="text"
-                value={dishName}
-                onChange={(e) => setDishName(e.target.value)}
-                placeholder='Например: "Жареный рис с лососем в азиатском стиле"'
-                className="w-full h-11 rounded-lg border bg-background px-4 text-sm font-medium placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
-              />
-              <p className="text-[10px] text-muted-foreground mt-2 space-y-0.5">
-                <span className="block">💡 <strong>Название определяет:</strong> технику приготовления, последовательность действий, стиль блюда</span>
-                <span className="block">✅ Хорошо: «Жареный рис с лососем», «Средиземноморский салат с тунцом», «Овсянка с бананом и орехами»</span>
-                <span className="block">❌ Плохо: пустое поле — AI не поймёт КАК готовить, только ИЗ ЧЕГО</span>
-              </p>
             </CardContent>
           </Card>
 
