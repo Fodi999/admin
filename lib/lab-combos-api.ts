@@ -112,6 +112,24 @@ export async function generateCombo(
   return res.json();
 }
 
+/** POST /api/admin/lab-combos/generate-all-locales
+ *  One call → generates pages for all 4 locales (en, pl, ru, uk) */
+export async function generateComboAllLocales(
+  token: string,
+  req: GenerateComboRequest,
+): Promise<LabComboPage[]> {
+  const res = await fetch(`${API_BASE}/api/admin/lab-combos/generate-all-locales`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Failed to generate combo (all locales): ${res.status}`);
+  }
+  return res.json();
+}
+
 /** POST /api/admin/lab-combos/generate-popular */
 export async function generatePopularCombos(
   token: string,
