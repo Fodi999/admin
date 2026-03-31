@@ -517,13 +517,13 @@ export default function LabComboEditorPage({
             </Section>
 
             {/* ── Block 3.5: Structured Ingredients (from catalog DB) ── */}
-            {Array.isArray(combo.structured_ingredients) && combo.structured_ingredients.length > 0 && (
-              <Section title="🥩 Ингредиенты (из каталога)">
+            <Section title="🥩 Ингредиенты (из каталога)">
+              {Array.isArray(combo.structured_ingredients) && combo.structured_ingredients.length > 0 ? (
                 <div className="space-y-2">
-                  {combo.structured_ingredients.map((ing, i) => (
+                  {combo.structured_ingredients.map((ing: Record<string, unknown>, i: number) => (
                     <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30">
                       {ing.image_url ? (
-                        <img src={ing.image_url} alt={ing.name} className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                        <img src={ing.image_url as string} alt={ing.name as string} className="w-10 h-10 rounded-lg object-cover shrink-0" />
                       ) : (
                         <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-lg shrink-0">
                           {ing.product_type === "seafood" || ing.product_type === "meat" || ing.product_type === "poultry" ? "🥩" :
@@ -537,15 +537,15 @@ export default function LabComboEditorPage({
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{ing.name}</p>
-                        {ing.product_type && (
+                        <p className="text-sm font-medium truncate">{ing.name as string}</p>
+                        {typeof ing.product_type === "string" && (
                           <p className="text-[10px] text-muted-foreground">{ing.product_type}</p>
                         )}
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-sm font-bold">{ing.grams}г</p>
+                        <p className="text-sm font-bold">{ing.grams as number}г</p>
                         <p className="text-[10px] text-muted-foreground">
-                          {ing.kcal} kcal · Б{ing.protein}
+                          {ing.kcal as number} kcal · Б{ing.protein as number}
                         </p>
                       </div>
                     </div>
@@ -564,8 +564,16 @@ export default function LabComboEditorPage({
                     </div>
                   </div>
                 </div>
-              </Section>
-            )}
+              ) : (
+                <div className="text-center py-6 text-muted-foreground">
+                  <p className="text-sm">Структурированные ингредиенты отсутствуют.</p>
+                  <p className="text-xs mt-1">
+                    Этот рецепт создан до добавления поля — нажмите{" "}
+                    <strong>«Backfill ингредиенты»</strong> на странице списка.
+                  </p>
+                </div>
+              )}
+            </Section>
 
             {/* ── Block 4: Recipe (read-only view) ── */}
             {Array.isArray(combo.how_to_cook) && combo.how_to_cook.length > 0 && (

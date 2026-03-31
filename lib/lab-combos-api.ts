@@ -287,3 +287,15 @@ export async function saveTypedImageUrl(
   if (!res.ok) throw new Error(`Failed to save typed image URL: ${res.status}`);
   return res.json();
 }
+
+/** POST /api/admin/lab-combos/backfill-ingredients */
+export async function backfillStructuredIngredients(
+  token: string,
+): Promise<{ updated: number; message: string }> {
+  const res = await fetch(`${API_BASE}/api/admin/lab-combos/backfill-ingredients`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error(`Backfill failed: ${res.status}`);
+  return res.json();
+}

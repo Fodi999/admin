@@ -9,6 +9,7 @@ import {
   publishCombo,
   archiveCombo,
   deleteCombo,
+  backfillStructuredIngredients,
   type LabComboPage,
 } from "@/lib/lab-combos-api";
 
@@ -78,6 +79,7 @@ export default function LabCombosPage() {
   // Popular combos generation
   const [generatingPopular, setGeneratingPopular] = useState(false);
   const [popularLocale, setPopularLocale] = useState("en");
+  const [backfilling, setBackfilling] = useState(false);
 
   // Action loading states
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
@@ -172,6 +174,24 @@ export default function LabCombosPage() {
       toast.error("Ошибка генерации популярных", { description: String(err) });
     } finally {
       setGeneratingPopular(false);
+    }
+  };
+
+  // ── Backfill structured ingredients ───────────────────────────────
+
+  const handleBackfill = async () => {
+    if (!token) return;
+    setBackfilling(true);
+    try {
+      const result = await backfillStructuredIngredients(token);
+      toast.success(`Backfill: обновлено ${result.updated} записей`, {
+        description: result.message,
+      });
+      await loadCombos();
+    } catch (err: unknown) {
+      toast.error("Ошибка backfill", { description: String(err) });
+    } finally {
+      setBackfilling(false);
     }
   };
 
@@ -270,6 +290,19 @@ export default function LabCombosPage() {
                 <Sparkles className="h-4 w-4 mr-1" />
               )}
               Создать 14 популярных Combo (×4 языка)
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleBackfill}
+              disabled={backfilling}
+            >
+              {backfilling ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-1" />
+              )}
+              Backfill ингредиенты
             </Button>
           </div>
         </CardContent>
