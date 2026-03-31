@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, use } from "react";
+import { useEffect, useState, useCallback, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import { getToken } from "@/lib/auth";
 import {
@@ -50,6 +50,8 @@ import {
   Settings2,
   Copy,
   Pencil,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -61,21 +63,29 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
 // ══════════════════════════════════════════════════════════════════════
-// TYPES — DishState (single source of truth)
+// TYPES — Slim IngredientRef + IngredientMeta cache
 // ══════════════════════════════════════════════════════════════════════
 
-interface DishIngredient {
+/** Slim reference stored in DishState — only slug + grams + locked */
+interface IngredientRef {
   slug: string;
-  name: string;
   grams: number; // base grams (×1)
+  locked: boolean;
+}
+
+/** Heavy metadata — lives in IngredientCache, NOT in DishState */
+interface IngredientMeta {
+  name: string;
   kcal_per_100: number;
   protein_per_100: number;
   fat_per_100: number;
   carbs_per_100: number;
   image_url: string | null;
   product_type: string | null;
-  locked: boolean;
 }
+
+/** Map<slug, IngredientMeta> — populated once from structured_ingredients */
+type IngredientCache = Map<string, IngredientMeta>;
 
 interface DishContext {
   vegetarian: boolean;
@@ -86,7 +96,7 @@ interface DishContext {
 }
 
 interface DishState {
-  ingredients: DishIngredient[];
+  ingredients: IngredientRef[];
   context: DishContext;
   multiplier: number;
 }
@@ -96,6 +106,7 @@ interface DishState {
 // ══════════════════════════════════════════════════════════════════════
 
 const BLOG_BASE = "https://dima-fomin.pl";
+const MAX_HISTORY = 30;
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
@@ -172,10 +183,6 @@ function roleLabel(pt: string | null): string {
   return map[pt ?? ""] ?? "🍽️ Прочее";
 }
 
-function escapeRegex(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function defaultPortionGrams(pt: string | null): number {
   const map: Record<string, number> = {
     seafood: 150,
@@ -200,37 +207,42 @@ function defaultPortionGrams(pt: string | null): number {
   return map[pt ?? ""] ?? 100;
 }
 
-/** Build DishState from combo data */
-function buildDishState(combo: LabComboPage): DishState {
-  const ingredients: DishIngredient[] = (
-    combo.structured_ingredients ?? []
-  ).map((si) => ({
-    slug: si.slug,
-    name: si.name,
-    grams: si.grams,
-    kcal_per_100:
-      si.grams > 0 && si.kcal > 0
-        ? Math.round((si.kcal / si.grams) * 100)
-        : 0,
-    protein_per_100:
-      si.grams > 0 && si.protein > 0
-        ? +((si.protein / si.grams) * 100).toFixed(1)
-        : 0,
-    fat_per_100:
-      si.grams > 0 && si.fat > 0
-        ? +((si.fat / si.grams) * 100).toFixed(1)
-        : 0,
-    carbs_per_100:
-      si.grams > 0 && si.carbs > 0
-        ? +((si.carbs / si.grams) * 100).toFixed(1)
-        : 0,
-    image_url: si.image_url,
-    product_type: si.product_type,
-    locked: false,
-  }));
+/** Build DishState + populate IngredientCache from combo structured_ingredients */
+function buildDishState(
+  combo: LabComboPage,
+  cache: IngredientCache,
+): DishState {
+  const refs: IngredientRef[] = [];
+
+  for (const si of combo.structured_ingredients ?? []) {
+    refs.push({ slug: si.slug, grams: si.grams, locked: false });
+
+    // Populate cache with meta derived from structured_ingredients
+    cache.set(si.slug, {
+      name: si.name,
+      kcal_per_100:
+        si.grams > 0 && si.kcal > 0
+          ? Math.round((si.kcal / si.grams) * 100)
+          : 0,
+      protein_per_100:
+        si.grams > 0 && si.protein > 0
+          ? +((si.protein / si.grams) * 100).toFixed(1)
+          : 0,
+      fat_per_100:
+        si.grams > 0 && si.fat > 0
+          ? +((si.fat / si.grams) * 100).toFixed(1)
+          : 0,
+      carbs_per_100:
+        si.grams > 0 && si.carbs > 0
+          ? +((si.carbs / si.grams) * 100).toFixed(1)
+          : 0,
+      image_url: si.image_url,
+      product_type: si.product_type,
+    });
+  }
 
   return {
-    ingredients,
+    ingredients: refs,
     context: {
       vegetarian: combo.diet === "vegetarian",
       quick: combo.cooking_time === "quick",
@@ -242,41 +254,24 @@ function buildDishState(combo: LabComboPage): DishState {
   };
 }
 
-/** Compute totals from DishState */
-function computeTotals(dish: DishState) {
+/** Compute totals from slim refs + cache */
+function computeTotals(dish: DishState, cache: IngredientCache) {
   return dish.ingredients.reduce(
-    (acc, ing) => {
-      const g = ing.grams * dish.multiplier;
+    (acc, ref) => {
+      const meta = cache.get(ref.slug);
+      if (!meta) return acc;
+      const g = ref.grams * dish.multiplier;
       const factor = g / 100;
       return {
         grams: acc.grams + g,
-        kcal: acc.kcal + ing.kcal_per_100 * factor,
-        protein: acc.protein + ing.protein_per_100 * factor,
-        fat: acc.fat + ing.fat_per_100 * factor,
-        carbs: acc.carbs + ing.carbs_per_100 * factor,
+        kcal: acc.kcal + meta.kcal_per_100 * factor,
+        protein: acc.protein + meta.protein_per_100 * factor,
+        fat: acc.fat + meta.fat_per_100 * factor,
+        carbs: acc.carbs + meta.carbs_per_100 * factor,
       };
     },
     { grams: 0, kcal: 0, protein: 0, fat: 0, carbs: 0 },
   );
-}
-
-/** Replace ingredient grams in step text to match DishState */
-function syncStepText(
-  text: string,
-  ingredients: DishIngredient[],
-  multiplier: number,
-): string {
-  let result = text;
-  for (const ing of ingredients) {
-    const g = Math.round(ing.grams * multiplier);
-    // Match "IngredientName (NNNg)" or "IngredientName (NNNг)"
-    const pat = new RegExp(
-      `(${escapeRegex(ing.name)}\\s*\\()\\d+\\s*[gг](\\))`,
-      "gi",
-    );
-    result = result.replace(pat, `$1${g}г$2`);
-  }
-  return result;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -409,12 +404,15 @@ function MultiplierControl({
   );
 }
 
+/** Inline search to add ingredients from catalog → populates both refs and cache */
 function InlineIngredientSearch({
   token,
+  cache,
   onAdd,
 }: {
   token: string;
-  onAdd: (ing: DishIngredient) => void;
+  cache: IngredientCache;
+  onAdd: (ref: IngredientRef) => void;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchProductResult[]>([]);
@@ -443,11 +441,13 @@ function InlineIngredientSearch({
   const handleAdd = async (hit: SearchProductResult) => {
     try {
       const full = await getProduct(token, hit.id);
+      const slug =
+        hit.slug || hit.name_en.toLowerCase().replace(/\s+/g, "-");
       const dg = defaultPortionGrams(hit.product_type);
-      onAdd({
-        slug: hit.slug || hit.name_en.toLowerCase().replace(/\s+/g, "-"),
+
+      // Populate cache with product metadata
+      cache.set(slug, {
         name: hit.name_ru || hit.name_en,
-        grams: dg,
         kcal_per_100: full.calories_per_100g ?? 0,
         protein_per_100: full.protein_per_100g
           ? parseFloat(String(full.protein_per_100g))
@@ -460,8 +460,11 @@ function InlineIngredientSearch({
           : 0,
         image_url: hit.image_url,
         product_type: hit.product_type,
-        locked: false,
       });
+
+      // Return slim ref only
+      onAdd({ slug, grams: dg, locked: false });
+
       setQuery("");
       setResults([]);
       setOpen(false);
@@ -544,36 +547,53 @@ function InlineIngredientSearch({
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Render step text with clickable ingredient badges
+// Render step text with clickable ingredient badges (NO regex replace)
+// Shows real-time grams from DishState as [🐟 Salmon 300г] badges
 // ══════════════════════════════════════════════════════════════════════
 
 function renderStepWithIngredients(
   text: string,
-  ingredients: DishIngredient[],
+  refs: IngredientRef[],
+  cache: IngredientCache,
+  multiplier: number,
   onIngredientClick: (slug: string) => void,
 ): React.ReactNode {
-  if (ingredients.length === 0) return text;
+  if (refs.length === 0 || cache.size === 0) return text;
 
-  const sorted = [...ingredients].sort(
-    (a, b) => b.name.length - a.name.length,
+  // Build name→ref+meta lookup, sorted longest-name-first to avoid partial matches
+  const entries = refs
+    .map((ref) => {
+      const meta = cache.get(ref.slug);
+      return meta ? { ref, meta } : null;
+    })
+    .filter(Boolean) as { ref: IngredientRef; meta: IngredientMeta }[];
+
+  entries.sort((a, b) => b.meta.name.length - a.meta.name.length);
+
+  // Build regex from all ingredient names
+  const escapedNames = entries.map((e) =>
+    e.meta.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
   );
-  const pattern = sorted.map((i) => escapeRegex(i.name)).join("|");
+  const pattern = escapedNames.join("|");
+  if (!pattern) return text;
+
   const regex = new RegExp(`(${pattern})`, "gi");
   const parts = text.split(regex);
 
   return parts.map((part, i) => {
-    const match = sorted.find(
-      (ing) => ing.name.toLowerCase() === part.toLowerCase(),
+    const match = entries.find(
+      (e) => e.meta.name.toLowerCase() === part.toLowerCase(),
     );
     if (match) {
+      const g = Math.round(match.ref.grams * multiplier);
       return (
         <button
           key={i}
           type="button"
-          onClick={() => onIngredientClick(match.slug)}
+          onClick={() => onIngredientClick(match.ref.slug)}
           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition cursor-pointer mx-0.5"
         >
-          {typeEmoji(match.product_type)} {part}
+          {typeEmoji(match.meta.product_type)} {part} {g}г
         </button>
       );
     }
@@ -582,7 +602,7 @@ function renderStepWithIngredients(
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Tip Action Card
+// Tip Action Card — decision engine with measurable outcome
 // ══════════════════════════════════════════════════════════════════════
 
 function TipActionCard({
@@ -639,7 +659,10 @@ export default function LabComboEditorPage({
   const [combo, setCombo] = useState<LabComboPage | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // DishState — single source of truth
+  // ── IngredientCache (ref — survives re-renders, never in state) ──
+  const cacheRef = useRef<IngredientCache>(new Map());
+
+  // ── DishState — single source of truth ──
   const [dish, setDish] = useState<DishState>({
     ingredients: [],
     context: {
@@ -651,6 +674,39 @@ export default function LabComboEditorPage({
     },
     multiplier: 1,
   });
+
+  // ── History for undo/redo ──
+  const [history, setHistory] = useState<DishState[]>([]);
+  const [future, setFuture] = useState<DishState[]>([]);
+
+  /** Push current dish to history before making a change */
+  const pushHistory = useCallback(() => {
+    setHistory((prev) => {
+      const next = [...prev, dish];
+      return next.length > MAX_HISTORY ? next.slice(-MAX_HISTORY) : next;
+    });
+    setFuture([]); // clear redo stack on new action
+  }, [dish]);
+
+  const undo = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      setFuture((f) => [dish, ...f]);
+      setDish(last);
+      return prev.slice(0, -1);
+    });
+  }, [dish]);
+
+  const redo = useCallback(() => {
+    setFuture((prev) => {
+      if (prev.length === 0) return prev;
+      const next = prev[0];
+      setHistory((h) => [...h, dish]);
+      setDish(next);
+      return prev.slice(1);
+    });
+  }, [dish]);
 
   // Editable SEO fields
   const [title, setTitle] = useState("");
@@ -694,7 +750,11 @@ export default function LabComboEditorPage({
         }
         setCombo(found);
         populateFields(found);
-        setDish(buildDishState(found));
+        const cache = cacheRef.current;
+        cache.clear();
+        setDish(buildDishState(found, cache));
+        setHistory([]);
+        setFuture([]);
       } catch (err: unknown) {
         toast.error("Ошибка загрузки", { description: String(err) });
       } finally {
@@ -712,70 +772,113 @@ export default function LabComboEditorPage({
     setImageUrl(c.image_url || "");
   }
 
-  // ── DishState mutators ──────────────────────────────────────────
+  // ── DishState mutators (all push history before changing) ───────
 
   const updateIngredientGrams = useCallback(
     (slug: string, grams: number) => {
+      pushHistory();
       setDish((prev) => ({
         ...prev,
-        ingredients: prev.ingredients.map((i) =>
-          i.slug === slug ? { ...i, grams: Math.max(1, grams) } : i,
+        ingredients: prev.ingredients.map((r) =>
+          r.slug === slug ? { ...r, grams: Math.max(1, grams) } : r,
         ),
       }));
     },
-    [],
+    [pushHistory],
   );
 
-  const toggleLock = useCallback((slug: string) => {
-    setDish((prev) => ({
-      ...prev,
-      ingredients: prev.ingredients.map((i) =>
-        i.slug === slug ? { ...i, locked: !i.locked } : i,
-      ),
-    }));
-  }, []);
+  const toggleLock = useCallback(
+    (slug: string) => {
+      pushHistory();
+      setDish((prev) => ({
+        ...prev,
+        ingredients: prev.ingredients.map((r) =>
+          r.slug === slug ? { ...r, locked: !r.locked } : r,
+        ),
+      }));
+    },
+    [pushHistory],
+  );
 
-  const removeIngredient = useCallback((slug: string) => {
-    setDish((prev) => ({
-      ...prev,
-      ingredients: prev.ingredients.filter((i) => i.slug !== slug),
-    }));
-  }, []);
+  const removeIngredient = useCallback(
+    (slug: string) => {
+      pushHistory();
+      setDish((prev) => ({
+        ...prev,
+        ingredients: prev.ingredients.filter((r) => r.slug !== slug),
+      }));
+    },
+    [pushHistory],
+  );
 
-  const addIngredient = useCallback((ing: DishIngredient) => {
-    setDish((prev) => {
-      if (prev.ingredients.some((i) => i.slug === ing.slug)) {
-        toast.info("Уже добавлен");
-        return prev;
-      }
-      return { ...prev, ingredients: [...prev.ingredients, ing] };
-    });
-  }, []);
+  const addIngredient = useCallback(
+    (ref: IngredientRef) => {
+      pushHistory();
+      setDish((prev) => {
+        if (prev.ingredients.some((r) => r.slug === ref.slug)) {
+          toast.info("Уже добавлен");
+          return prev;
+        }
+        return { ...prev, ingredients: [...prev.ingredients, ref] };
+      });
+    },
+    [pushHistory],
+  );
 
-  const setMultiplier = useCallback((m: number) => {
-    setDish((prev) => ({ ...prev, multiplier: m }));
-  }, []);
+  const setMultiplier = useCallback(
+    (m: number) => {
+      pushHistory();
+      setDish((prev) => ({ ...prev, multiplier: m }));
+    },
+    [pushHistory],
+  );
 
-  const setGoal = useCallback((goal: string) => {
-    setDish((prev) => ({ ...prev, context: { ...prev.context, goal } }));
-  }, []);
+  const setGoal = useCallback(
+    (goal: string) => {
+      pushHistory();
+      setDish((prev) => ({ ...prev, context: { ...prev.context, goal } }));
+    },
+    [pushHistory],
+  );
 
-  const setCuisine = useCallback((cuisine: string) => {
-    setDish((prev) => ({
-      ...prev,
-      context: { ...prev.context, cuisine },
-    }));
-  }, []);
+  const setCuisine = useCallback(
+    (cuisine: string) => {
+      pushHistory();
+      setDish((prev) => ({
+        ...prev,
+        context: { ...prev.context, cuisine },
+      }));
+    },
+    [pushHistory],
+  );
 
   const toggleContextFlag = useCallback(
     (key: "vegetarian" | "quick" | "cheap") => {
+      pushHistory();
       setDish((prev) => ({
         ...prev,
         context: { ...prev.context, [key]: !prev.context[key] },
       }));
     },
-    [],
+    [pushHistory],
   );
+
+  // ── Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z ──────────────────
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [undo, redo]);
 
   // ── Scroll to ingredient ────────────────────────────────────────
 
@@ -931,7 +1034,11 @@ export default function LabComboEditorPage({
       const found = all.find((c) => c.id === id);
       if (found) {
         setCombo(found);
-        setDish(buildDishState(found));
+        const cache = cacheRef.current;
+        cache.clear();
+        setDish(buildDishState(found, cache));
+        setHistory([]);
+        setFuture([]);
       }
     } catch (err: unknown) {
       toast.error("Backfill ошибка", { description: String(err) });
@@ -942,7 +1049,8 @@ export default function LabComboEditorPage({
 
   // ── Computed ────────────────────────────────────────────────────
 
-  const totals = computeTotals(dish);
+  const cache = cacheRef.current;
+  const totals = computeTotals(dish, cache);
   const howToCook = combo?.how_to_cook ?? [];
   const optimizationTips = combo?.optimization_tips ?? [];
   const faq = combo?.faq ?? [];
@@ -1008,6 +1116,25 @@ export default function LabComboEditorPage({
               <span className="text-green-500">
                 У{Math.round(totals.carbs)}
               </span>
+            </div>
+            {/* Undo / Redo */}
+            <div className="hidden sm:flex items-center gap-0.5 ml-1">
+              <button
+                onClick={undo}
+                disabled={history.length === 0}
+                className="p-1.5 rounded-md hover:bg-muted transition disabled:opacity-30"
+                title="Undo (⌘Z)"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={redo}
+                disabled={future.length === 0}
+                className="p-1.5 rounded-md hover:bg-muted transition disabled:opacity-30"
+                title="Redo (⌘⇧Z)"
+              >
+                <Redo2 className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
 
@@ -1152,7 +1279,8 @@ export default function LabComboEditorPage({
             </Section>
 
             {/* ═══════════════════════════════════════════════════
-                🧾 BLOCK 1: RECIPE — Dynamic Steps + Multiplier
+                🧾 BLOCK 1: RECIPE — Steps with ingredient badges
+                NO syncStepText — grams shown as live badges from state
             ═══════════════════════════════════════════════════ */}
             <Section
               title="🧾 Рецепт"
@@ -1184,39 +1312,34 @@ export default function LabComboEditorPage({
 
               {howToCook.length > 0 ? (
                 <div className="space-y-3">
-                  {howToCook.map((step, i) => {
-                    const text = syncStepText(
-                      step.text,
-                      dish.ingredients,
-                      dish.multiplier,
-                    );
-                    return (
-                      <div
-                        key={i}
-                        className="flex gap-3 p-3 rounded-xl bg-muted/20 border border-muted/30"
-                      >
-                        <span className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
-                          {step.step}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm leading-relaxed">
-                            {renderStepWithIngredients(
-                              text,
-                              dish.ingredients,
-                              scrollToIngredient,
-                            )}
-                          </p>
-                          {step.time_minutes != null &&
-                            step.time_minutes > 0 && (
-                              <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-                                <Clock className="h-3 w-3" />{" "}
-                                {step.time_minutes} мин
-                              </p>
-                            )}
-                        </div>
+                  {howToCook.map((step, i) => (
+                    <div
+                      key={i}
+                      className="flex gap-3 p-3 rounded-xl bg-muted/20 border border-muted/30"
+                    >
+                      <span className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
+                        {step.step}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm leading-relaxed">
+                          {renderStepWithIngredients(
+                            step.text,
+                            dish.ingredients,
+                            cache,
+                            dish.multiplier,
+                            scrollToIngredient,
+                          )}
+                        </p>
+                        {step.time_minutes != null &&
+                          step.time_minutes > 0 && (
+                            <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />{" "}
+                              {step.time_minutes} мин
+                            </p>
+                          )}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                   {/* Total time */}
                   {howToCook.some((s) => s.time_minutes) && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
@@ -1241,7 +1364,7 @@ export default function LabComboEditorPage({
             </Section>
 
             {/* ═══════════════════════════════════════════════════
-                💡 BLOCK 2: OPTIMIZATION TIPS — Action Engine
+                💡 BLOCK 2: OPTIMIZATION TIPS — Decision Engine
             ═══════════════════════════════════════════════════ */}
             <Section
               title="💡 Советы по оптимизации"
@@ -1278,18 +1401,24 @@ export default function LabComboEditorPage({
                                       tip.ingredient &&
                                       tip.action === "add"
                                     ) {
+                                      const slug = tip.ingredient
+                                        .toLowerCase()
+                                        .replace(/\s+/g, "-");
+                                      // Add placeholder meta to cache
+                                      if (!cache.has(slug)) {
+                                        cache.set(slug, {
+                                          name: tip.ingredient,
+                                          kcal_per_100: 0,
+                                          protein_per_100: 0,
+                                          fat_per_100: 0,
+                                          carbs_per_100: 0,
+                                          image_url: null,
+                                          product_type: null,
+                                        });
+                                      }
                                       addIngredient({
-                                        slug: tip.ingredient
-                                          .toLowerCase()
-                                          .replace(/\s+/g, "-"),
-                                        name: tip.ingredient,
+                                        slug,
                                         grams: 10,
-                                        kcal_per_100: 0,
-                                        protein_per_100: 0,
-                                        fat_per_100: 0,
-                                        carbs_per_100: 0,
-                                        image_url: null,
-                                        product_type: null,
                                         locked: false,
                                       });
                                       toast.success(
@@ -1487,40 +1616,42 @@ export default function LabComboEditorPage({
 
                 {dish.ingredients.length > 0 ? (
                   <div className="space-y-1.5">
-                    {dish.ingredients.map((ing) => {
-                      const g = Math.round(ing.grams * dish.multiplier);
-                      const kcal = Math.round(
-                        (ing.kcal_per_100 * g) / 100,
-                      );
-                      const isHighlighted = highlightSlug === ing.slug;
+                    {dish.ingredients.map((ref) => {
+                      const meta = cache.get(ref.slug);
+                      const g = Math.round(ref.grams * dish.multiplier);
+                      const kcal = meta
+                        ? Math.round((meta.kcal_per_100 * g) / 100)
+                        : 0;
+                      const isHighlighted = highlightSlug === ref.slug;
                       return (
                         <div
-                          key={ing.slug}
-                          id={`ing-${ing.slug}`}
+                          key={ref.slug}
+                          id={`ing-${ref.slug}`}
                           className={`flex items-center gap-2 p-2 rounded-lg transition-all group ${
                             isHighlighted
                               ? "bg-primary/10 ring-2 ring-primary/40"
                               : "bg-muted/20 hover:bg-muted/40"
                           }`}
                         >
-                          {ing.image_url ? (
+                          {meta?.image_url ? (
                             <img
-                              src={ing.image_url}
+                              src={meta.image_url}
                               alt=""
                               className="w-8 h-8 rounded-lg object-cover shrink-0"
                             />
                           ) : (
                             <span className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-sm shrink-0">
-                              {typeEmoji(ing.product_type)}
+                              {typeEmoji(meta?.product_type ?? null)}
                             </span>
                           )}
 
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold truncate">
-                              {ing.name}
+                              {meta?.name ?? ref.slug}
                             </p>
                             <p className="text-[9px] text-muted-foreground">
-                              {roleLabel(ing.product_type)} · {kcal} kcal
+                              {roleLabel(meta?.product_type ?? null)} · {kcal}{" "}
+                              kcal
                             </p>
                           </div>
 
@@ -1529,8 +1660,8 @@ export default function LabComboEditorPage({
                             <button
                               onClick={() =>
                                 updateIngredientGrams(
-                                  ing.slug,
-                                  ing.grams - 10,
+                                  ref.slug,
+                                  ref.grams - 10,
                                 )
                               }
                               className="w-5 h-5 rounded flex items-center justify-center hover:bg-muted transition"
@@ -1539,10 +1670,10 @@ export default function LabComboEditorPage({
                             </button>
                             <input
                               type="number"
-                              value={ing.grams}
+                              value={ref.grams}
                               onChange={(e) =>
                                 updateIngredientGrams(
-                                  ing.slug,
+                                  ref.slug,
                                   parseInt(e.target.value) || 1,
                                 )
                               }
@@ -1553,8 +1684,8 @@ export default function LabComboEditorPage({
                             <button
                               onClick={() =>
                                 updateIngredientGrams(
-                                  ing.slug,
-                                  ing.grams + 10,
+                                  ref.slug,
+                                  ref.grams + 10,
                                 )
                               }
                               className="w-5 h-5 rounded flex items-center justify-center hover:bg-muted transition"
@@ -1568,19 +1699,19 @@ export default function LabComboEditorPage({
 
                           {/* Lock */}
                           <button
-                            onClick={() => toggleLock(ing.slug)}
+                            onClick={() => toggleLock(ref.slug)}
                             className={`p-1 rounded transition ${
-                              ing.locked
+                              ref.locked
                                 ? "text-amber-500"
                                 : "text-muted-foreground/30 hover:text-muted-foreground"
                             }`}
                             title={
-                              ing.locked
+                              ref.locked
                                 ? "Разблокировать"
                                 : "AI не заменит"
                             }
                           >
-                            {ing.locked ? (
+                            {ref.locked ? (
                               <Lock className="h-3.5 w-3.5" />
                             ) : (
                               <Unlock className="h-3.5 w-3.5" />
@@ -1589,7 +1720,7 @@ export default function LabComboEditorPage({
 
                           {/* Remove */}
                           <button
-                            onClick={() => removeIngredient(ing.slug)}
+                            onClick={() => removeIngredient(ref.slug)}
                             className="p-1 rounded opacity-0 group-hover:opacity-100 transition hover:bg-destructive/10"
                           >
                             <X className="h-3.5 w-3.5 text-destructive" />
@@ -1644,6 +1775,7 @@ export default function LabComboEditorPage({
                 {token && (
                   <InlineIngredientSearch
                     token={token}
+                    cache={cache}
                     onAdd={addIngredient}
                   />
                 )}
