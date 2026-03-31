@@ -79,6 +79,10 @@ export interface GenerateComboRequest {
   cooking_time?: string;
   budget?: string;
   cuisine?: string;
+  /** 🧠 Dish name — primary logic driver for recipe generation.
+   * Determines cooking technique, step order, and dish style.
+   * Example: "Жареный рис с лососем в азиатском стиле" */
+  dish_name?: string;
   /** AI model: "flash" (fast, default) or "pro" (smart, better SEO quality) */
   model?: string;
 }

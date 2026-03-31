@@ -237,6 +237,7 @@ export default function NewLabComboPage() {
   const [selectedIngredients, setSelectedIngredients] = useState<SelectedIngredient[]>([]);
 
   // Step 1: Parameters
+  const [dishName, setDishName] = useState("");
   const [goal, setGoal] = useState("");
   const [mealType, setMealType] = useState("");
   const [diet, setDiet] = useState("");
@@ -288,6 +289,7 @@ export default function NewLabComboPage() {
       const req: GenerateComboRequest = {
         ingredients: ingredientSlugs,
         locale: "en", // ignored — backend generates all 4
+        ...(dishName && { dish_name: dishName }),
         ...(goal && { goal }),
         ...(mealType && { meal_type: mealType }),
         ...(diet && { diet }),
@@ -444,6 +446,37 @@ export default function NewLabComboPage() {
                   <Badge variant="outline" className="text-[10px]">UK</Badge>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* 🧠 Dish Name — PRIMARY LOGIC DRIVER */}
+          <Card className="border-primary/40 bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ChefHat className="h-4 w-4 text-primary" />
+                🧠 Название блюда
+                <Badge variant="default" className="text-[10px] ml-auto">
+                  Определяет способ приготовления
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                Название = логика приготовления. «Жареный рис» → wok/pan + high heat.
+                «Боул с лососем» → сборка без готовки. «Запечённая курица» → духовка.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <input
+                type="text"
+                value={dishName}
+                onChange={(e) => setDishName(e.target.value)}
+                placeholder='Например: "Жареный рис с лососем в азиатском стиле"'
+                className="w-full h-11 rounded-lg border bg-background px-4 text-sm font-medium placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+              <p className="text-[10px] text-muted-foreground mt-2 space-y-0.5">
+                <span className="block">💡 <strong>Название определяет:</strong> технику приготовления, последовательность действий, стиль блюда</span>
+                <span className="block">✅ Хорошо: «Жареный рис с лососем», «Средиземноморский салат с тунцом», «Овсянка с бананом и орехами»</span>
+                <span className="block">❌ Плохо: пустое поле — AI не поймёт КАК готовить, только ИЗ ЧЕГО</span>
+              </p>
             </CardContent>
           </Card>
 
@@ -675,6 +708,11 @@ export default function NewLabComboPage() {
             </div>
             {goal && <Badge className="mt-2">🎯 {goal.replace(/_/g, " ")}</Badge>}
             {mealType && <Badge className="mt-2 ml-1">🍽️ {mealType}</Badge>}
+            {dishName && (
+              <p className="text-sm font-semibold text-primary mt-3">
+                🧠 «{dishName}»
+              </p>
+            )}
             <p className="text-xs text-muted-foreground mt-6">
               Обычно 15-30 секунд на модели Pro
             </p>
