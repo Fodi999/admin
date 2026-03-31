@@ -516,6 +516,57 @@ export default function LabComboEditorPage({
               </div>
             </Section>
 
+            {/* ── Block 3.5: Structured Ingredients (from catalog DB) ── */}
+            {Array.isArray(combo.structured_ingredients) && combo.structured_ingredients.length > 0 && (
+              <Section title="🥩 Ингредиенты (из каталога)">
+                <div className="space-y-2">
+                  {combo.structured_ingredients.map((ing, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30">
+                      {ing.image_url ? (
+                        <img src={ing.image_url} alt={ing.name} className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-lg shrink-0">
+                          {ing.product_type === "seafood" || ing.product_type === "meat" || ing.product_type === "poultry" ? "🥩" :
+                           ing.product_type === "grain" || ing.product_type === "bread" ? "🌾" :
+                           ing.product_type === "vegetable" ? "🥬" :
+                           ing.product_type === "fruit" ? "🍎" :
+                           ing.product_type === "oil" || ing.product_type === "nut" ? "🫒" :
+                           ing.product_type === "dairy" || ing.product_type === "egg" ? "🥛" :
+                           ing.product_type === "spice" || ing.product_type === "condiment" || ing.product_type === "sauce" ? "🧂" :
+                           "🍽️"}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{ing.name}</p>
+                        {ing.product_type && (
+                          <p className="text-[10px] text-muted-foreground">{ing.product_type}</p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold">{ing.grams}г</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {ing.kcal} kcal · Б{ing.protein}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {/* Totals */}
+                  <div className="flex items-center gap-3 p-2.5 rounded-lg bg-primary/5 border border-primary/20 mt-1">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-lg shrink-0">📊</div>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold">Итого на порцию</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold">{Math.round(combo.total_weight_g)}г</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {Math.round(combo.calories_per_serving)} kcal · Б{Math.round(combo.protein_per_serving)} · Ж{Math.round(combo.fat_per_serving)} · У{Math.round(combo.carbs_per_serving)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </Section>
+            )}
+
             {/* ── Block 4: Recipe (read-only view) ── */}
             {Array.isArray(combo.how_to_cook) && combo.how_to_cook.length > 0 && (
               <Section title="👨‍🍳 Рецепт" defaultOpen={false}>
@@ -678,19 +729,37 @@ export default function LabComboEditorPage({
                   </div>
                 </div>
 
-                {/* Ingredients */}
+                {/* Ingredients (structured if available, chips fallback) */}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1.5">Ингредиенты</p>
-                  <div className="flex flex-wrap gap-1">
-                    {combo.ingredients.map((ing) => (
-                      <span
-                        key={ing}
-                        className="inline-block px-2 py-0.5 bg-primary/10 text-primary text-[10px] rounded-full font-medium"
-                      >
-                        {ing}
-                      </span>
-                    ))}
-                  </div>
+                  {Array.isArray(combo.structured_ingredients) && combo.structured_ingredients.length > 0 ? (
+                    <div className="space-y-1">
+                      {combo.structured_ingredients.map((ing, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-[11px]">
+                          {ing.image_url ? (
+                            <img src={ing.image_url} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
+                          ) : (
+                            <span className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center text-[9px] shrink-0">
+                              {ing.product_type?.charAt(0)?.toUpperCase() || "?"}
+                            </span>
+                          )}
+                          <span className="font-medium truncate flex-1">{ing.name}</span>
+                          <span className="text-muted-foreground font-mono">{ing.grams}г</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {combo.ingredients.map((ing) => (
+                        <span
+                          key={ing}
+                          className="inline-block px-2 py-0.5 bg-primary/10 text-primary text-[10px] rounded-full font-medium"
+                        >
+                          {ing}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* 6D Context */}
