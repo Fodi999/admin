@@ -551,6 +551,11 @@ function InlineIngredientSearch({
 // Shows real-time grams from DishState as [🐟 Salmon 300г] badges
 // ══════════════════════════════════════════════════════════════════════
 
+/** Strip parenthetical grams from step text: "Авокадо (80g)" → "Авокадо" */
+function stripGramsFromText(text: string): string {
+  return text.replace(/\s*\(\d+\s*[gг]\)/gi, "");
+}
+
 function renderStepWithIngredients(
   text: string,
   refs: IngredientRef[],
@@ -558,7 +563,10 @@ function renderStepWithIngredients(
   multiplier: number,
   onIngredientClick: (slug: string) => void,
 ): React.ReactNode {
-  if (refs.length === 0 || cache.size === 0) return text;
+  // First strip any hardcoded grams from text — badges are the single source
+  const cleanText = stripGramsFromText(text);
+
+  if (refs.length === 0 || cache.size === 0) return cleanText;
 
   // Build name→ref+meta lookup, sorted longest-name-first to avoid partial matches
   const entries = refs
@@ -575,10 +583,10 @@ function renderStepWithIngredients(
     e.meta.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
   );
   const pattern = escapedNames.join("|");
-  if (!pattern) return text;
+  if (!pattern) return cleanText;
 
   const regex = new RegExp(`(${pattern})`, "gi");
-  const parts = text.split(regex);
+  const parts = cleanText.split(regex);
 
   return parts.map((part, i) => {
     const match = entries.find(
@@ -586,15 +594,22 @@ function renderStepWithIngredients(
     );
     if (match) {
       const g = Math.round(match.ref.grams * multiplier);
+      const kcal = Math.round((match.meta.kcal_per_100 * g) / 100);
+      const prot = +((match.meta.protein_per_100 * g) / 100).toFixed(1);
       return (
-        <button
-          key={i}
-          type="button"
-          onClick={() => onIngredientClick(match.ref.slug)}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition cursor-pointer mx-0.5"
-        >
-          {typeEmoji(match.meta.product_type)} {part} {g}г
-        </button>
+        <span key={i} className="relative group/badge inline-block mx-0.5">
+          <button
+            type="button"
+            onClick={() => onIngredientClick(match.ref.slug)}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition cursor-pointer"
+          >
+            {typeEmoji(match.meta.product_type)} {part} · {g}г
+          </button>
+          {/* Hover tooltip: kcal + protein */}
+          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1.5 rounded-lg bg-foreground text-background text-[10px] font-medium whitespace-nowrap opacity-0 group-hover/badge:opacity-100 transition-opacity z-50 shadow-lg">
+            {g}г · {kcal} kcal · Б{prot}г
+          </span>
+        </span>
       );
     }
     return <span key={i}>{part}</span>;
@@ -607,39 +622,56 @@ function renderStepWithIngredients(
 
 function TipActionCard({
   tip,
+  alreadyInDish,
   onApply,
 }: {
   tip: { icon: string; action: string; ingredient: string; tip: string };
+  alreadyInDish?: boolean;
   onApply?: () => void;
 }) {
   const actionLabel =
     {
-      add: "Добавить",
-      remove: "Убрать",
-      swap: "Заменить",
-      adjust: "Изменить",
+      add: "＋ Добавить",
+      remove: "✕ Убрать",
+      swap: "⇄ Заменить",
+      adjust: "⚙ Изменить",
       tip: "",
     }[tip.action] || "";
 
   return (
-    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/20 border border-muted/30 hover:border-primary/20 transition group">
-      <span className="text-base mt-0.5 shrink-0">{tip.icon}</span>
-      <div className="flex-1 min-w-0">
-        {tip.ingredient && (
-          <span className="font-bold text-sm text-primary mr-1">
-            {tip.ingredient}
-          </span>
+    <div
+      className={`p-3 rounded-xl border transition group ${
+        alreadyInDish
+          ? "bg-emerald-500/5 border-emerald-500/20"
+          : "bg-muted/20 border-muted/30 hover:border-primary/20"
+      }`}
+    >
+      <div className="flex items-start gap-2.5">
+        <span className="text-lg mt-0.5 shrink-0">{tip.icon}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            {tip.ingredient && (
+              <span className="font-bold text-sm text-primary">
+                {tip.ingredient}
+              </span>
+            )}
+            {alreadyInDish && (
+              <span className="text-[9px] bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded-full font-bold">
+                ✓ в блюде
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-foreground/80 mt-0.5">{tip.tip}</p>
+        </div>
+        {onApply && actionLabel && !alreadyInDish && (
+          <button
+            onClick={onApply}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-[10px] font-bold hover:bg-primary/20 transition opacity-0 group-hover:opacity-100"
+          >
+            {actionLabel}
+          </button>
         )}
-        <span className="text-sm text-foreground/80">{tip.tip}</span>
       </div>
-      {onApply && actionLabel && (
-        <button
-          onClick={onApply}
-          className="shrink-0 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-bold hover:bg-primary/20 transition opacity-0 group-hover:opacity-100"
-        >
-          {actionLabel}
-        </button>
-      )}
     </div>
   );
 }
@@ -722,6 +754,7 @@ export default function LabComboEditorPage({
   const [actionLoading, setActionLoading] = useState(false);
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
   const [highlightSlug, setHighlightSlug] = useState<string | null>(null);
+  const [devMode, setDevMode] = useState(false);
 
   // ── Auth ────────────────────────────────────────────────────────
 
@@ -1046,6 +1079,42 @@ export default function LabComboEditorPage({
       setActionLoading(false);
     }
   };
+
+  // ── Normalize portion to target kcal ──────────────────────────────
+
+  const normalizeToKcal = useCallback(
+    (targetKcal: number) => {
+      const current = computeTotals(dish, cacheRef.current);
+      if (current.kcal <= 0) return;
+      const ratio = targetKcal / current.kcal;
+      pushHistory();
+      setDish((prev) => ({
+        ...prev,
+        ingredients: prev.ingredients.map((r) =>
+          r.locked ? r : { ...r, grams: Math.max(1, Math.round(r.grams * ratio)) },
+        ),
+      }));
+      toast.success(`Нормализовано → ${targetKcal} kcal`);
+    },
+    [dish, pushHistory],
+  );
+
+  const normalizeToProtein = useCallback(
+    (targetProtein: number) => {
+      const current = computeTotals(dish, cacheRef.current);
+      if (current.protein <= 0) return;
+      const ratio = targetProtein / current.protein;
+      pushHistory();
+      setDish((prev) => ({
+        ...prev,
+        ingredients: prev.ingredients.map((r) =>
+          r.locked ? r : { ...r, grams: Math.max(1, Math.round(r.grams * ratio)) },
+        ),
+      }));
+      toast.success(`Нормализовано → ${targetProtein}г белка`);
+    },
+    [dish, pushHistory],
+  );
 
   // ── Computed ────────────────────────────────────────────────────
 
@@ -1392,10 +1461,20 @@ export default function LabComboEditorPage({
                               🧠 Вкус и баланс
                             </p>
                             <div className="space-y-1.5">
-                              {addTips.map((tip, i) => (
+                              {addTips.map((tip, i) => {
+                                const tipSlug = tip.ingredient
+                                  ?.toLowerCase()
+                                  .replace(/\s+/g, "-");
+                                const inDish = tipSlug
+                                  ? dish.ingredients.some(
+                                      (r) => r.slug === tipSlug,
+                                    )
+                                  : false;
+                                return (
                                 <TipActionCard
                                   key={`a-${i}`}
                                   tip={tip}
+                                  alreadyInDish={inDish}
                                   onApply={() => {
                                     if (
                                       tip.ingredient &&
@@ -1427,7 +1506,8 @@ export default function LabComboEditorPage({
                                     }
                                   }}
                                 />
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         )}
@@ -1451,10 +1531,20 @@ export default function LabComboEditorPage({
                               ➖ Убрать лишнее
                             </p>
                             <div className="space-y-1.5">
-                              {removeTips.map((tip, i) => (
+                              {removeTips.map((tip, i) => {
+                                const tipSlug = tip.ingredient
+                                  ?.toLowerCase()
+                                  .replace(/\s+/g, "-");
+                                const inDish = tipSlug
+                                  ? dish.ingredients.some(
+                                      (r) => r.slug === tipSlug,
+                                    )
+                                  : false;
+                                return (
                                 <TipActionCard
                                   key={`r-${i}`}
                                   tip={tip}
+                                  alreadyInDish={inDish}
                                   onApply={() => {
                                     if (tip.ingredient) {
                                       removeIngredient(
@@ -1468,7 +1558,8 @@ export default function LabComboEditorPage({
                                     }
                                   }}
                                 />
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         )}
@@ -1511,108 +1602,120 @@ export default function LabComboEditorPage({
               </Section>
             )}
 
-            {/* JSON debug */}
-            <Section
-              title="🔧 JSON"
-              icon={<Settings2 className="h-4 w-4" />}
-              defaultOpen={false}
-            >
-              <pre className="text-[10px] bg-muted/40 rounded-lg p-4 overflow-auto max-h-72 font-mono whitespace-pre-wrap break-all">
-                {JSON.stringify(combo.smart_response, null, 2)}
-              </pre>
-            </Section>
+            {/* JSON debug — Dev Mode toggle */}
+            <div className="flex items-center gap-2 px-1">
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={devMode}
+                  onChange={(e) => setDevMode(e.target.checked)}
+                  className="rounded border-muted-foreground/30"
+                />
+                <Settings2 className="h-3.5 w-3.5" />
+                Dev Mode
+              </label>
+            </div>
+            {devMode && (
+              <Section
+                title="🔧 JSON (dev)"
+                icon={<Settings2 className="h-4 w-4" />}
+                defaultOpen={true}
+              >
+                <pre className="text-[10px] bg-muted/40 rounded-lg p-4 overflow-auto max-h-72 font-mono whitespace-pre-wrap break-all">
+                  {JSON.stringify(combo.smart_response, null, 2)}
+                </pre>
+                <pre className="text-[10px] bg-muted/40 rounded-lg p-4 overflow-auto max-h-48 font-mono whitespace-pre-wrap break-all mt-2">
+                  {JSON.stringify({ dish, totals: computeTotals(dish, cache) }, null, 2)}
+                </pre>
+              </Section>
+            )}
           </div>
 
           {/* ══════════════════════════════════════════════════════
               ⚙️ RIGHT: CONTROL CENTER (w-80)
           ══════════════════════════════════════════════════════ */}
           <div className="w-80 shrink-0 space-y-4 sticky top-20">
-            {/* Status & Actions */}
-            <Card>
-              <CardContent className="p-4 space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Публикация
-                </p>
-                <div className="flex items-center gap-2">
-                  <Badge className={STATUS_COLORS[combo.status]}>
-                    {combo.status === "draft" && "Черновик"}
-                    {combo.status === "published" && "✓ Опубликовано"}
-                    {combo.status === "archived" && "В архиве"}
-                  </Badge>
-                  {combo.published_at && (
-                    <span className="text-[10px] text-muted-foreground">
-                      {new Date(combo.published_at).toLocaleDateString("ru")}
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-2 pt-1">
-                  {combo.status !== "published" && (
-                    <Button
-                      className="w-full"
-                      size="sm"
-                      onClick={handlePublish}
-                      disabled={actionLoading}
-                    >
-                      {actionLoading ? (
-                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      ) : (
-                        <ArrowUpCircle className="h-4 w-4 mr-1" />
-                      )}
-                      Опубликовать
-                    </Button>
-                  )}
-                  {combo.status !== "archived" && (
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      size="sm"
-                      onClick={handleArchive}
-                      disabled={actionLoading}
-                    >
-                      <Archive className="h-4 w-4 mr-1" /> В архив
-                    </Button>
-                  )}
-                  {combo.status === "published" && (
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      size="sm"
-                      asChild
-                    >
-                      <a
-                        href={`${BLOG_BASE}/${combo.locale}/recipes/${combo.slug}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> На сайте
-                      </a>
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
-                    size="sm"
-                    onClick={handleDelete}
-                    disabled={actionLoading}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" /> Удалить
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* ── Editable Ingredients ── */}
-            <Card>
-              <CardContent className="p-4 space-y-3">
+            {/* ═══════════════════════════════════════════════════
+                🔥 BLOCK 1 (HERO) — Big Totals
+            ═══════════════════════════════════════════════════ */}
+            <Card className="bg-primary/5 border-primary/20">
+              <CardContent className="p-5 space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    🥩 Ингредиенты ({dish.ingredients.length})
+                  <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                    📊 Итого
                   </p>
                   <MultiplierControl
                     value={dish.multiplier}
                     onChange={setMultiplier}
                   />
                 </div>
+                {/* Big weight */}
+                <p className="text-3xl font-black tracking-tight text-foreground">
+                  {Math.round(totals.grams)}г
+                </p>
+                {/* Big kcal */}
+                <p className="text-2xl font-black text-orange-600">
+                  {Math.round(totals.kcal)} kcal
+                </p>
+                {/* Macro bars */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <p className="text-lg font-black text-blue-600">
+                      {Math.round(totals.protein)}г
+                    </p>
+                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground">
+                      Белки
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-black text-yellow-600">
+                      {Math.round(totals.fat)}г
+                    </p>
+                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground">
+                      Жиры
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-black text-green-600">
+                      {Math.round(totals.carbs)}г
+                    </p>
+                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground">
+                      Углеводы
+                    </p>
+                  </div>
+                </div>
+                {/* Quick normalize buttons */}
+                <div className="flex gap-1.5 pt-1">
+                  <button
+                    onClick={() => normalizeToKcal(500)}
+                    className="flex-1 text-[10px] font-bold py-1.5 rounded-lg bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 transition"
+                  >
+                    → 500 kcal
+                  </button>
+                  <button
+                    onClick={() => normalizeToProtein(30)}
+                    className="flex-1 text-[10px] font-bold py-1.5 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition"
+                  >
+                    → 30г белка
+                  </button>
+                  <button
+                    onClick={() => normalizeToProtein(50)}
+                    className="flex-1 text-[10px] font-bold py-1.5 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition"
+                  >
+                    → 50г белка
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ═══════════════════════════════════════════════════
+                🔥 BLOCK 2 — Editable Ingredients
+            ═══════════════════════════════════════════════════ */}
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  🥩 Ингредиенты ({dish.ingredients.length})
+                </p>
 
                 {dish.ingredients.length > 0 ? (
                   <div className="space-y-1.5">
@@ -1655,8 +1758,20 @@ export default function LabComboEditorPage({
                             </p>
                           </div>
 
-                          {/* ±10 buttons + input */}
+                          {/* ±10 / ±50 buttons + input */}
                           <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              onClick={() =>
+                                updateIngredientGrams(
+                                  ref.slug,
+                                  ref.grams - 50,
+                                )
+                              }
+                              className="w-5 h-5 rounded flex items-center justify-center hover:bg-muted transition text-[8px] font-bold text-muted-foreground"
+                              title="-50г"
+                            >
+                              ⏪
+                            </button>
                             <button
                               onClick={() =>
                                 updateIngredientGrams(
@@ -1691,6 +1806,18 @@ export default function LabComboEditorPage({
                               className="w-5 h-5 rounded flex items-center justify-center hover:bg-muted transition"
                             >
                               <Plus className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={() =>
+                                updateIngredientGrams(
+                                  ref.slug,
+                                  ref.grams + 50,
+                                )
+                              }
+                              className="w-5 h-5 rounded flex items-center justify-center hover:bg-muted transition text-[8px] font-bold text-muted-foreground"
+                              title="+50г"
+                            >
+                              ⏩
                             </button>
                             <span className="text-[10px] text-muted-foreground w-3">
                               г
@@ -1728,28 +1855,6 @@ export default function LabComboEditorPage({
                         </div>
                       );
                     })}
-
-                    {/* Totals */}
-                    <div className="flex items-center justify-between px-2 py-2 rounded-lg bg-primary/5 border border-primary/20 mt-1">
-                      <span className="text-[10px] font-semibold">
-                        📊 Итого
-                      </span>
-                      <div className="flex gap-2 text-[10px] font-medium">
-                        <span>{Math.round(totals.grams)}г</span>
-                        <span className="text-orange-600">
-                          {Math.round(totals.kcal)} kcal
-                        </span>
-                        <span className="text-blue-600">
-                          Б{Math.round(totals.protein)}
-                        </span>
-                        <span className="text-yellow-600">
-                          Ж{Math.round(totals.fat)}
-                        </span>
-                        <span className="text-green-600">
-                          У{Math.round(totals.carbs)}
-                        </span>
-                      </div>
-                    </div>
                   </div>
                 ) : (
                   <div className="text-center py-4 text-xs text-muted-foreground space-y-2">
@@ -1782,7 +1887,9 @@ export default function LabComboEditorPage({
               </CardContent>
             </Card>
 
-            {/* ── Context Toggles ── */}
+            {/* ═══════════════════════════════════════════════════
+                🔥 BLOCK 3 — Context
+            ═══════════════════════════════════════════════════ */}
             <Card>
               <CardContent className="p-4 space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1864,7 +1971,82 @@ export default function LabComboEditorPage({
               </CardContent>
             </Card>
 
-            {/* ── Quality + URL ── */}
+            {/* ═══════════════════════════════════════════════════
+                🔥 BLOCK 4 — Публикация + Инфо (low priority)
+            ═══════════════════════════════════════════════════ */}
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Публикация
+                </p>
+                <div className="flex items-center gap-2">
+                  <Badge className={STATUS_COLORS[combo.status]}>
+                    {combo.status === "draft" && "Черновик"}
+                    {combo.status === "published" && "✓ Опубликовано"}
+                    {combo.status === "archived" && "В архиве"}
+                  </Badge>
+                  {combo.published_at && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(combo.published_at).toLocaleDateString("ru")}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-2 pt-1">
+                  {combo.status !== "published" && (
+                    <Button
+                      className="w-full"
+                      size="sm"
+                      onClick={handlePublish}
+                      disabled={actionLoading}
+                    >
+                      {actionLoading ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <ArrowUpCircle className="h-4 w-4 mr-1" />
+                      )}
+                      Опубликовать
+                    </Button>
+                  )}
+                  {combo.status !== "archived" && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      size="sm"
+                      onClick={handleArchive}
+                      disabled={actionLoading}
+                    >
+                      <Archive className="h-4 w-4 mr-1" /> В архив
+                    </Button>
+                  )}
+                  {combo.status === "published" && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      size="sm"
+                      asChild
+                    >
+                      <a
+                        href={`${BLOG_BASE}/${combo.locale}/recipes/${combo.slug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> На сайте
+                      </a>
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                    size="sm"
+                    onClick={handleDelete}
+                    disabled={actionLoading}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" /> Удалить
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardContent className="p-4 space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
