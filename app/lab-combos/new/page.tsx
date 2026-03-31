@@ -9,6 +9,11 @@ import {
   type LabComboPage,
 } from "@/lib/lab-combos-api";
 
+import IngredientPicker, {
+  type SelectedIngredient,
+  getRole,
+} from "@/components/ingredient-picker";
+
 import {
   FlaskConical,
   Loader2,
@@ -23,6 +28,7 @@ import {
   Wallet,
   MapPin,
   Bot,
+  Flame,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -34,9 +40,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -136,6 +140,90 @@ function StepBar({ current }: { current: number }) {
   );
 }
 
+// ── Dish Structure Analysis ──────────────────────────────────────────
+
+function DishAnalysis({ ingredients }: { ingredients: SelectedIngredient[] }) {
+  // Group by role
+  const groups: Record<string, SelectedIngredient[]> = {};
+  for (const ing of ingredients) {
+    const role = getRole(ing.product_type);
+    if (!groups[role]) groups[role] = [];
+    groups[role].push(ing);
+  }
+
+  const totalCal = ingredients.reduce(
+    (acc, ing) => acc + (ing.calories_per_100g ?? 0) * (ing.grams / 100),
+    0,
+  );
+  const totalPro = ingredients.reduce(
+    (acc, ing) => acc + (ing.protein_per_100g ?? 0) * (ing.grams / 100),
+    0,
+  );
+  const totalFat = ingredients.reduce(
+    (acc, ing) => acc + (ing.fat_per_100g ?? 0) * (ing.grams / 100),
+    0,
+  );
+  const totalCarb = ingredients.reduce(
+    (acc, ing) => acc + (ing.carbs_per_100g ?? 0) * (ing.grams / 100),
+    0,
+  );
+
+  return (
+    <Card className="bg-gradient-to-br from-primary/5 to-transparent border-primary/20">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Flame className="h-4 w-4 text-orange-500" />
+          Структура блюда
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Автоматический анализ — роли ингредиентов и нутриенты из каталога
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Roles */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {Object.entries(groups).map(([role, items]) => (
+            <div key={role} className="p-2.5 rounded-lg border bg-background/50">
+              <p className="text-xs font-semibold">{role}</p>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {items.map((ing) => (
+                  <Badge
+                    key={ing.id}
+                    variant="secondary"
+                    className="text-[10px] font-normal"
+                  >
+                    {ing.name_ru || ing.name_en} · {ing.grams}г
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Macros bar */}
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <div className="p-2 rounded-lg bg-orange-500/10">
+            <p className="text-lg font-black text-orange-600">{Math.round(totalCal)}</p>
+            <p className="text-[10px] text-muted-foreground uppercase">kcal</p>
+          </div>
+          <div className="p-2 rounded-lg bg-blue-500/10">
+            <p className="text-lg font-black text-blue-600">{totalPro.toFixed(0)}г</p>
+            <p className="text-[10px] text-muted-foreground uppercase">Белки</p>
+          </div>
+          <div className="p-2 rounded-lg bg-yellow-500/10">
+            <p className="text-lg font-black text-yellow-600">{totalFat.toFixed(0)}г</p>
+            <p className="text-[10px] text-muted-foreground uppercase">Жиры</p>
+          </div>
+          <div className="p-2 rounded-lg bg-green-500/10">
+            <p className="text-lg font-black text-green-600">{totalCarb.toFixed(0)}г</p>
+            <p className="text-[10px] text-muted-foreground uppercase">Углеводы</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Main Page ────────────────────────────────────────────────────────
 
 export default function NewLabComboPage() {
@@ -145,8 +233,8 @@ export default function NewLabComboPage() {
   // Step control
   const [step, setStep] = useState(0);
 
-  // Step 0: Ingredients
-  const [ingredientsText, setIngredientsText] = useState("");
+  // Step 0: Ingredients (from catalog)
+  const [selectedIngredients, setSelectedIngredients] = useState<SelectedIngredient[]>([]);
 
   // Step 1: Parameters
   const [goal, setGoal] = useState("");
@@ -174,17 +262,14 @@ export default function NewLabComboPage() {
     setToken(t);
   }, [router]);
 
-  // Parse ingredients
-  const parsedIngredients = ingredientsText
-    .split(/[,\n]+/)
-    .map((s) => s.trim().toLowerCase().replace(/\s+/g, "-"))
-    .filter(Boolean);
+  // Slug list for backend
+  const ingredientSlugs = selectedIngredients.map((i) => i.slug);
 
   // ── Step 0 → 1 ────────────────────────────────────────────────────
 
   function handleIngredientsNext() {
-    if (parsedIngredients.length === 0) {
-      setError("Введите хотя бы 1 ингредиент");
+    if (selectedIngredients.length === 0) {
+      setError("Добавьте хотя бы 1 ингредиент из каталога");
       return;
     }
     setError("");
@@ -201,7 +286,7 @@ export default function NewLabComboPage() {
 
     try {
       const req: GenerateComboRequest = {
-        ingredients: parsedIngredients,
+        ingredients: ingredientSlugs,
         locale: "en", // ignored — backend generates all 4
         ...(goal && { goal }),
         ...(mealType && { meal_type: mealType }),
@@ -220,7 +305,7 @@ export default function NewLabComboPage() {
       });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
-      setStep(1); // Go back to params
+      setStep(1);
     } finally {
       setGenerating(false);
     }
@@ -247,113 +332,101 @@ export default function NewLabComboPage() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
           <FlaskConical className="h-7 w-7 text-primary" />
-          Создать Combo-рецепт
+          Собрать блюдо
         </h1>
         <p className="text-muted-foreground mt-1">
-          Введите ингредиенты на любом языке → AI сгенерирует SEO-страницу на 4 языках
+          Выберите ингредиенты из каталога → система соберёт рецепт с реальными данными
         </p>
       </div>
 
       <StepBar current={step} />
 
-      {/* ═══ STEP 0: Ingredients ═══════════════════════════════════════ */}
-      {step === 0 && (
-        <Card className="border-primary/40">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <ChefHat className="h-5 w-5 text-primary" />
-              Какие ингредиенты?
-            </CardTitle>
-            <CardDescription>
-              Введите ингредиенты на <strong>любом языке</strong> — русском, английском, польском, украинском.
-              <br />
-              AI автоматически найдёт slug в каталоге.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Textarea
-              value={ingredientsText}
-              onChange={(e) => setIngredientsText(e.target.value)}
-              placeholder={"лосось, рис, авокадо\nили по одному:\nchicken\nbroccoli\nrice"}
-              className="font-mono text-base min-h-[140px] border-2 border-primary/20 focus-visible:border-primary/50"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && e.metaKey) {
-                  e.preventDefault();
-                  handleIngredientsNext();
-                }
-              }}
-            />
+      {/* ═══ STEP 0: Ingredient Picker ═════════════════════════════════ */}
+      {step === 0 && token && (
+        <div className="space-y-4">
+          <Card className="border-primary/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <ChefHat className="h-5 w-5 text-primary" />
+                Какие ингредиенты?
+              </CardTitle>
+              <CardDescription>
+                Ищите в каталоге по названию на любом языке — <strong>salmon</strong>, <strong>лосось</strong>, <strong>ryż</strong>.
+                <br />
+                Система подтянет калории, БЖУ и фото из базы данных.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <IngredientPicker
+                token={token}
+                selected={selectedIngredients}
+                onChange={setSelectedIngredients}
+                maxItems={8}
+              />
+            </CardContent>
+          </Card>
 
-            {/* Parsed preview */}
-            {parsedIngredients.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Распознано {parsedIngredients.length} ингредиент(ов):
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {parsedIngredients.map((ing, i) => (
-                    <span
-                      key={i}
-                      className="inline-flex items-center px-2.5 py-1 bg-primary/10 text-primary text-sm rounded-full font-medium"
-                    >
-                      {ing}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
+          {/* ── Dish structure analysis (appears when 2+ ingredients) ── */}
+          {selectedIngredients.length >= 2 && (
+            <DishAnalysis ingredients={selectedIngredients} />
+          )}
 
-            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
-              <Globe className="h-4 w-4 shrink-0" />
-              <span>
-                Поддерживаются: <strong>English</strong>, <strong>Русский</strong>, <strong>Polski</strong>, <strong>Українська</strong>.
-                Система автоматически найдёт правильный slug (лосось → salmon, ryż → rice).
-              </span>
-            </div>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-
-            <div className="flex justify-end pt-2">
-              <Button
-                onClick={handleIngredientsNext}
-                disabled={parsedIngredients.length === 0}
-                size="lg"
-                className="gap-2 px-8"
-              >
-                Далее — параметры
-                <ChefHat className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={handleIngredientsNext}
+              disabled={selectedIngredients.length === 0}
+              size="lg"
+              className="gap-2 px-8"
+            >
+              Далее — параметры
+              <ChefHat className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* ═══ STEP 1: Parameters ════════════════════════════════════════ */}
       {step === 1 && (
         <div className="space-y-4">
-          {/* Ingredients summary */}
+          {/* Ingredients summary — structured */}
           <Card className="bg-muted/30 border-muted">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <ChefHat className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium">Ингредиенты:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {parsedIngredients.map((ing, i) => (
-                      <Badge key={i} variant="secondary" className="text-xs">
-                        {ing}
-                      </Badge>
-                    ))}
-                  </div>
+                  <span className="text-sm font-semibold">
+                    Блюдо из {selectedIngredients.length} ингредиентов
+                  </span>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => setStep(0)}>
                   Изменить
                 </Button>
+              </div>
+              <div className="space-y-1">
+                {selectedIngredients.map((ing) => (
+                  <div key={ing.id} className="flex items-center gap-2 text-sm">
+                    {ing.image_url ? (
+                      <img src={ing.image_url} alt="" className="w-6 h-6 rounded object-cover" />
+                    ) : (
+                      <span className="w-6 h-6 rounded bg-muted flex items-center justify-center text-xs">
+                        {ing.product_type?.charAt(0)?.toUpperCase() || "?"}
+                      </span>
+                    )}
+                    <span className="font-medium">{ing.name_ru || ing.name_en}</span>
+                    <span className="text-muted-foreground">— {ing.grams}г</span>
+                    {ing.calories_per_100g !== null && (
+                      <span className="text-muted-foreground text-xs">
+                        ({Math.round(ing.calories_per_100g * ing.grams / 100)} kcal)
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -452,7 +525,6 @@ export default function NewLabComboPage() {
 
           {/* Diet, Time, Budget, Cuisine — compact grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Diet */}
             <Card>
               <CardContent className="p-4 space-y-2">
                 <Label className="flex items-center gap-1.5 text-sm font-medium">
@@ -473,7 +545,6 @@ export default function NewLabComboPage() {
               </CardContent>
             </Card>
 
-            {/* Cooking Time */}
             <Card>
               <CardContent className="p-4 space-y-2">
                 <Label className="flex items-center gap-1.5 text-sm font-medium">
@@ -494,7 +565,6 @@ export default function NewLabComboPage() {
               </CardContent>
             </Card>
 
-            {/* Budget */}
             <Card>
               <CardContent className="p-4 space-y-2">
                 <Label className="flex items-center gap-1.5 text-sm font-medium">
@@ -515,7 +585,6 @@ export default function NewLabComboPage() {
               </CardContent>
             </Card>
 
-            {/* Cuisine */}
             <Card>
               <CardContent className="p-4 space-y-2">
                 <Label className="flex items-center gap-1.5 text-sm font-medium">
@@ -579,7 +648,7 @@ export default function NewLabComboPage() {
             </Button>
             <Button onClick={handleGenerate} size="lg" className="gap-2 px-8">
               <Sparkles className="h-4 w-4" />
-              Создать ×4 языка
+              Собрать рецепт ×4 языка
             </Button>
           </div>
         </div>
@@ -590,19 +659,24 @@ export default function NewLabComboPage() {
         <Card className="border-primary/20">
           <CardContent className="py-20 text-center">
             <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-            <p className="text-lg font-semibold">AI генерирует SEO-страницу…</p>
+            <p className="text-lg font-semibold">AI собирает рецепт…</p>
             <p className="text-sm text-muted-foreground mt-2">
-              Создаём контент на 4 языках: EN · PL · RU · UK
+              Ингредиенты из каталога → AI генерирует только текст (шаги, название, описание)
             </p>
-            <div className="flex justify-center gap-2 mt-4">
-              {parsedIngredients.map((ing, i) => (
-                <Badge key={i} variant="secondary">{ing}</Badge>
+            <div className="flex justify-center gap-2 mt-4 flex-wrap">
+              {selectedIngredients.map((ing) => (
+                <Badge key={ing.id} variant="secondary" className="gap-1">
+                  {ing.image_url && (
+                    <img src={ing.image_url} alt="" className="w-4 h-4 rounded object-cover" />
+                  )}
+                  {ing.name_en} · {ing.grams}г
+                </Badge>
               ))}
             </div>
             {goal && <Badge className="mt-2">🎯 {goal.replace(/_/g, " ")}</Badge>}
             {mealType && <Badge className="mt-2 ml-1">🍽️ {mealType}</Badge>}
             <p className="text-xs text-muted-foreground mt-6">
-              Обычно занимает 15-30 секунд на модели Pro
+              Обычно 15-30 секунд на модели Pro
             </p>
           </CardContent>
         </Card>
@@ -617,18 +691,66 @@ export default function NewLabComboPage() {
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-500 text-white mb-3">
                 <Check className="h-6 w-6" />
               </div>
-              <h2 className="text-xl font-bold">Combo создан!</h2>
+              <h2 className="text-xl font-bold">Рецепт собран!</h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Сгенерировано {result.length} страниц(ы) на разных языках
+                Сгенерировано {result.length} страниц(ы) — данные из каталога, текст от AI
               </p>
               <p className="font-mono text-xs mt-2 text-primary">/{result[0].slug}</p>
+            </CardContent>
+          </Card>
+
+          {/* Ingredient recap (real data) */}
+          <Card className="bg-muted/30">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                📊 Нутриенты из каталога (на 1 порцию)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1.5">
+                {selectedIngredients.map((ing) => {
+                  const cal = ing.calories_per_100g
+                    ? Math.round(ing.calories_per_100g * ing.grams / 100)
+                    : null;
+                  const pro = ing.protein_per_100g
+                    ? (ing.protein_per_100g * ing.grams / 100).toFixed(1)
+                    : null;
+                  return (
+                    <div key={ing.id} className="flex items-center gap-2 text-sm">
+                      {ing.image_url ? (
+                        <img src={ing.image_url} alt="" className="w-6 h-6 rounded object-cover" />
+                      ) : (
+                        <span className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center text-xs">
+                          {ing.product_type?.charAt(0)?.toUpperCase() || "?"}
+                        </span>
+                      )}
+                      <span className="font-medium flex-1">
+                        {ing.name_ru || ing.name_en}
+                      </span>
+                      <span className="text-muted-foreground font-mono text-xs">
+                        {ing.grams}г
+                      </span>
+                      {cal !== null && (
+                        <span className="text-orange-600 font-mono text-xs">{cal} kcal</span>
+                      )}
+                      {pro !== null && (
+                        <span className="text-blue-600 font-mono text-xs">Б {pro}г</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
 
           {/* Generated pages */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {result.map((page) => (
-              <Card key={page.id} className="hover:bg-muted/30 transition-colors">
+              <Card
+                key={page.id}
+                className="hover:bg-muted/30 transition-colors cursor-pointer"
+                onClick={() => router.push(`/lab-combos/${page.id}`)}
+              >
                 <CardContent className="p-4 space-y-2">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-xs font-bold">
@@ -667,7 +789,7 @@ export default function NewLabComboPage() {
             <Button
               onClick={() => {
                 setStep(0);
-                setIngredientsText("");
+                setSelectedIngredients([]);
                 setGoal("");
                 setMealType("");
                 setDiet("");
@@ -682,7 +804,7 @@ export default function NewLabComboPage() {
               className="gap-2"
             >
               <FlaskConical className="h-4 w-4" />
-              Создать ещё
+              Собрать ещё
             </Button>
           </div>
         </div>
