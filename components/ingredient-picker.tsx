@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 
 // ── Types ────────────────────────────────────────────────────────────
 
+export type IngredientUnit = "g" | "pcs" | "ml";
+
 export interface SelectedIngredient {
   id: string;
   slug: string;
@@ -20,12 +22,87 @@ export interface SelectedIngredient {
   name_ru: string | null;
   image_url: string | null;
   product_type: string | null;
-  grams: number;
+  grams: number; // always stored in grams (source of truth for macros)
+  unit: IngredientUnit; // display unit
+  unitAmount: number; // amount in display unit (e.g. 2 for "2 шт")
   // Macros (loaded async from full Product)
   calories_per_100g: number | null;
   protein_per_100g: number | null;
   fat_per_100g: number | null;
   carbs_per_100g: number | null;
+}
+
+/** Unit labels */
+const UNIT_LABELS: Record<IngredientUnit, string> = {
+  g: "г",
+  pcs: "шт",
+  ml: "мл",
+};
+
+/** Detect if an ingredient is actually eggs (DB may store as "dairy") */
+function isEgg(productType: string | null, slug: string): boolean {
+  if (productType?.toLowerCase() === "egg") return true;
+  // chicken-eggs, quail-eggs, etc. stored as "dairy" in DB
+  return /egg/i.test(slug) && !/eggplant/i.test(slug);
+}
+
+/** Which units are available for a product type */
+function availableUnits(productType: string | null, slug = ""): IngredientUnit[] {
+  if (isEgg(productType, slug)) return ["pcs", "g"];
+  switch (productType?.toLowerCase()) {
+    case "oil":
+    case "sauce":
+    case "beverage":
+      return ["ml", "g"];
+    case "fruit":
+      return ["pcs", "g"];
+    default:
+      return ["g"];
+  }
+}
+
+/** Default unit for a product type */
+function defaultUnit(productType: string | null, slug = ""): IngredientUnit {
+  if (isEgg(productType, slug)) return "pcs";
+  switch (productType?.toLowerCase()) {
+    case "oil":
+    case "sauce":
+    case "beverage":
+      return "ml";
+    default:
+      return "g";
+  }
+}
+
+/** Grams per 1 unit (for pcs/ml conversion) */
+function gramsPerUnit(productType: string | null, unit: IngredientUnit, slug = ""): number {
+  if (unit === "g") return 1;
+  if (unit === "ml") {
+    switch (productType?.toLowerCase()) {
+      case "oil": return 0.92;
+      default: return 1;
+    }
+  }
+  // pcs
+  if (isEgg(productType, slug)) return 60; // 1 egg ≈ 60g
+  switch (productType?.toLowerCase()) {
+    case "fruit": return 150; // 1 medium fruit ≈ 150g
+    default: return 100;
+  }
+}
+
+/** Default amount in the default unit */
+function defaultUnitAmount(productType: string | null, slug = ""): number {
+  const unit = defaultUnit(productType, slug);
+  if (unit === "pcs") {
+    if (isEgg(productType, slug)) return 2;
+    switch (productType?.toLowerCase()) {
+      case "fruit": return 1;
+      default: return 1;
+    }
+  }
+  // For g or ml, return the portion grams
+  return defaultGrams(productType);
 }
 
 /** Map product_type → default grams for 1 portion */
@@ -176,15 +253,24 @@ export default function IngredientPicker({
   const addIngredient = async (hit: SearchProductResult) => {
     if (selected.length >= maxItems) return;
 
+    const slug = hit.slug || hit.name_en.toLowerCase().replace(/\s+/g, "-");
+    const unit = defaultUnit(hit.product_type, slug);
+    const unitAmt = defaultUnitAmount(hit.product_type, slug);
+    const grams = unit === "g"
+      ? unitAmt
+      : Math.round(unitAmt * gramsPerUnit(hit.product_type, unit, slug));
+
     // Build initial item with default grams
     const item: SelectedIngredient = {
       id: hit.id,
-      slug: hit.slug || hit.name_en.toLowerCase().replace(/\s+/g, "-"),
+      slug,
       name_en: hit.name_en,
       name_ru: hit.name_ru,
       image_url: hit.image_url,
       product_type: hit.product_type,
-      grams: defaultGrams(hit.product_type),
+      grams,
+      unit,
+      unitAmount: unitAmt,
       calories_per_100g: null,
       protein_per_100g: null,
       fat_per_100g: null,
@@ -225,10 +311,37 @@ export default function IngredientPicker({
     onChange(selected.filter((s) => s.id !== id));
   };
 
-  // ── Update grams ──────────────────────────────────────────────────
+  // ── Update amount (in current unit) ────────────────────────────────
 
-  const updateGrams = (id: string, grams: number) => {
-    onChange(selected.map((s) => (s.id === id ? { ...s, grams } : s)));
+  const updateAmount = (id: string, unitAmount: number) => {
+    onChange(
+      selected.map((s) => {
+        if (s.id !== id) return s;
+        const grams = s.unit === "g"
+          ? unitAmount
+          : Math.round(unitAmount * gramsPerUnit(s.product_type, s.unit, s.slug));
+        return { ...s, unitAmount, grams };
+      }),
+    );
+  };
+
+  // ── Switch unit ───────────────────────────────────────────────────
+
+  const switchUnit = (id: string, newUnit: IngredientUnit) => {
+    onChange(
+      selected.map((s) => {
+        if (s.id !== id) return s;
+        // Convert current grams back to the new unit
+        const gPerUnit = gramsPerUnit(s.product_type, newUnit, s.slug);
+        const newUnitAmount = newUnit === "g"
+          ? s.grams
+          : Math.max(1, Math.round(s.grams / gPerUnit));
+        const newGrams = newUnit === "g"
+          ? newUnitAmount
+          : Math.round(newUnitAmount * gPerUnit);
+        return { ...s, unit: newUnit, unitAmount: newUnitAmount, grams: newGrams };
+      }),
+    );
   };
 
   // ── Totals ────────────────────────────────────────────────────────
@@ -370,19 +483,43 @@ export default function IngredientPicker({
                     </p>
                   </div>
 
-                  {/* Grams input */}
+                  {/* Amount input + unit selector */}
                   <div className="flex items-center gap-1 shrink-0">
                     <input
                       type="number"
-                      value={ing.grams}
+                      value={ing.unitAmount}
                       onChange={(e) =>
-                        updateGrams(ing.id, Math.max(1, parseInt(e.target.value) || 1))
+                        updateAmount(ing.id, Math.max(ing.unit === "pcs" ? 1 : 1, parseFloat(e.target.value) || 1))
                       }
+                      step={ing.unit === "pcs" ? 1 : ing.unit === "ml" ? 5 : 10}
                       className="w-16 h-8 text-center text-sm font-mono rounded-lg border bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
-                      min={1}
-                      max={2000}
+                      min={ing.unit === "pcs" ? 1 : 1}
+                      max={ing.unit === "pcs" ? 50 : 2000}
                     />
-                    <span className="text-xs text-muted-foreground">г</span>
+                    {/* Unit selector — shown only if multiple units available */}
+                    {(() => {
+                      const units = availableUnits(ing.product_type, ing.slug);
+                      if (units.length <= 1) {
+                        return <span className="text-xs text-muted-foreground w-6">{UNIT_LABELS[ing.unit]}</span>;
+                      }
+                      return (
+                        <select
+                          value={ing.unit}
+                          onChange={(e) => switchUnit(ing.id, e.target.value as IngredientUnit)}
+                          className="h-8 text-xs font-medium rounded-lg border bg-background px-1 focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
+                        >
+                          {units.map((u) => (
+                            <option key={u} value={u}>{UNIT_LABELS[u]}</option>
+                          ))}
+                        </select>
+                      );
+                    })()}
+                    {/* Show equivalent grams when not in grams */}
+                    {ing.unit !== "g" && (
+                      <span className="text-[10px] text-muted-foreground/60 w-10 text-right">
+                        ≈{ing.grams}г
+                      </span>
+                    )}
                   </div>
 
                   {/* Remove */}

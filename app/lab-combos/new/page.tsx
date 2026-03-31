@@ -457,7 +457,9 @@ export default function NewLabComboPage() {
                       </span>
                     )}
                     <span className="font-medium">{ing.name_ru || ing.name_en}</span>
-                    <span className="text-muted-foreground">— {ing.grams}г</span>
+                    <span className="text-muted-foreground">
+                      — {ing.unit === "g" ? `${ing.grams}г` : ing.unit === "pcs" ? `${ing.unitAmount} шт (≈${ing.grams}г)` : `${ing.unitAmount} мл (≈${ing.grams}г)`}
+                    </span>
                     {ing.calories_per_100g !== null && (
                       <span className="text-muted-foreground text-xs">
                         ({Math.round(ing.calories_per_100g * ing.grams / 100)} kcal)
