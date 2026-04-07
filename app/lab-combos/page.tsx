@@ -383,7 +383,7 @@ export default function LabCombosPage() {
                         {combo.locale.toUpperCase()}
                       </Badge>
                       <Badge variant="outline" className="text-[10px]">
-                        Score: {combo.quality_score}/5
+                        Score: {combo.quality_score}/100
                       </Badge>
                       {combo.goal && (
                         <Badge variant="secondary" className="text-[10px]">

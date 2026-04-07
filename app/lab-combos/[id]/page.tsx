@@ -1169,7 +1169,7 @@ export default function LabComboEditorPage({
             </Badge>
             <Badge variant="outline" className="text-xs">
               <Star className="h-3 w-3 mr-1 text-yellow-500" />
-              {combo.quality_score}/5
+              {combo.quality_score}/100
             </Badge>
             {/* Macro summary in topbar */}
             <div className="hidden md:flex items-center gap-2 text-[10px] font-medium text-muted-foreground ml-2">
@@ -1392,30 +1392,30 @@ export default function LabComboEditorPage({
                       <div className="flex-1 min-w-0">
                         <p className="text-sm leading-relaxed">
                           {renderStepWithIngredients(
-                            step.text,
+                            step.text ?? step.description ?? "",
                             dish.ingredients,
                             cache,
                             dish.multiplier,
                             scrollToIngredient,
                           )}
                         </p>
-                        {step.time_minutes != null &&
-                          step.time_minutes > 0 && (
+                        {(step.time_minutes ?? step.duration_minutes) != null &&
+                          (step.time_minutes ?? step.duration_minutes)! > 0 && (
                             <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
                               <Clock className="h-3 w-3" />{" "}
-                              {step.time_minutes} мин
+                              {step.time_minutes ?? step.duration_minutes} мин
                             </p>
                           )}
                       </div>
                     </div>
                   ))}
                   {/* Total time */}
-                  {howToCook.some((s) => s.time_minutes) && (
+                  {howToCook.some((s) => s.time_minutes ?? s.duration_minutes) && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
                       <Clock className="h-3.5 w-3.5" />
                       Общее время: ~
                       {howToCook.reduce(
-                        (s, st) => s + (st.time_minutes ?? 0),
+                        (s, st) => s + (st.time_minutes ?? st.duration_minutes ?? 0),
                         0,
                       )}{" "}
                       мин
@@ -2057,19 +2057,14 @@ export default function LabComboEditorPage({
                   <div className="flex items-center gap-2">
                     <Star className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
                     <span className="font-medium">Качество:</span>
-                    <div className="flex gap-0.5">
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <span
-                          key={n}
-                          className={
-                            n <= combo.quality_score
-                              ? "text-yellow-500"
-                              : "text-muted-foreground/20"
-                          }
-                        >
-                          ★
-                        </span>
-                      ))}
+                    <span className={`font-bold tabular-nums ${combo.quality_score >= 75 ? "text-emerald-500" : combo.quality_score >= 50 ? "text-yellow-500" : "text-red-500"}`}>
+                      {combo.quality_score}/100
+                    </span>
+                    <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${combo.quality_score >= 75 ? "bg-emerald-500" : combo.quality_score >= 50 ? "bg-yellow-500" : "bg-red-500"}`}
+                        style={{ width: `${Math.min(combo.quality_score, 100)}%` }}
+                      />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

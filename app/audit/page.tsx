@@ -99,6 +99,7 @@ export default function AuditPage() {
   const [filterGroup, setFilterGroup] = useState<
     'all' | 'complete' | 'optional' | 'critical'
   >('all');
+  const [filterPublish, setFilterPublish] = useState<'all' | 'published' | 'draft'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'score' | 'name'>('score');
   const [summary, setSummary] = useState({
@@ -107,6 +108,8 @@ export default function AuditPage() {
     complete: 0,
     critical: 0,
     optional: 0,
+    published: 0,
+    draft: 0,
   });
 
   useEffect(() => {
@@ -131,6 +134,7 @@ export default function AuditPage() {
             id: p.id,
             name_en: p.name_en,
             product_type: p.product_type ?? 'other',
+            is_published: p.is_published ?? false,
             score: 0,
             filled: 0,
             total: 1,
@@ -148,6 +152,8 @@ export default function AuditPage() {
           complete: dq.complete,
           critical: dq.critical_missing,
           optional: dq.optional_missing,
+          published: dq.products.filter((q) => q.is_published).length,
+          draft: dq.products.filter((q) => !q.is_published).length,
         });
       })
       .catch((err) => {
@@ -172,7 +178,11 @@ export default function AuditPage() {
         (filterGroup === 'complete' && r.quality.status === 'complete') ||
         (filterGroup === 'optional' && r.quality.status === 'optional_missing') ||
         (filterGroup === 'critical' && r.quality.status === 'critical_missing');
-      return matchSearch && matchGroup;
+      const matchPublish =
+        filterPublish === 'all' ||
+        (filterPublish === 'published' && r.quality.is_published) ||
+        (filterPublish === 'draft' && !r.quality.is_published);
+      return matchSearch && matchGroup && matchPublish;
     })
     .sort((a, b) =>
       sortBy === 'score'
@@ -199,7 +209,8 @@ export default function AuditPage() {
       <div>
         <h1 className="text-3xl font-extrabold tracking-tight">🔍 Data Quality</h1>
         <p className="text-muted-foreground mt-1">
-          Backend = source of truth · {summary.total} продуктов · {summary.complete}{' '}
+          Backend = source of truth · {summary.total} продуктов · {summary.published}{' '}
+          📢 pub · {summary.draft} 📝 draft · {summary.complete}{' '}
           ✅ · {summary.critical} 🔴 · {summary.optional} 🟡
         </p>
       </div>
@@ -327,8 +338,8 @@ export default function AuditPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 items-center">
-        <div className="relative flex-1">
+      <div className="flex gap-3 items-center flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Поиск продукта..."
@@ -337,6 +348,23 @@ export default function AuditPage() {
             className="pl-9 rounded-xl"
           />
         </div>
+        <Button
+          variant={filterPublish === 'published' ? 'default' : 'outline'}
+          size="sm"
+          className="rounded-xl"
+          onClick={() => setFilterPublish(filterPublish === 'published' ? 'all' : 'published')}
+        >
+          📢 Pub ({summary.published})
+        </Button>
+        <Button
+          variant={filterPublish === 'draft' ? 'default' : 'outline'}
+          size="sm"
+          className="rounded-xl"
+          onClick={() => setFilterPublish(filterPublish === 'draft' ? 'all' : 'draft')}
+        >
+          📝 Draft ({summary.draft})
+        </Button>
+        <div className="w-px h-6 bg-border/40" />
         <Button
           variant={sortBy === 'score' ? 'default' : 'outline'}
           size="sm"
@@ -391,8 +419,17 @@ export default function AuditPage() {
 
                 {/* Name */}
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm truncate">
+                  <div className="font-semibold text-sm truncate flex items-center gap-1.5">
                     {p.name_ru || p.name_en}
+                    {q.is_published ? (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-green-600 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 rounded-full">
+                        ✅ Pub
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-muted-foreground/60 bg-muted/30 border border-border/30 px-1.5 py-0.5 rounded-full">
+                        Draft
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground truncate">
                     {catName}

@@ -2,9 +2,13 @@
 // Lab Combo SEO Pages — Admin API Client
 // ══════════════════════════════════════════════════════════════════════
 
+// In the browser use the Next.js rewrite proxy (/api/backend/...) to avoid
+// CORS issues. On the server (SSR/RSC) call Koyeb directly.
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  'https://ministerial-yetta-fodi999-c58d8823.koyeb.app';
+  typeof window !== 'undefined'
+    ? '/api/backend'
+    : (process.env.NEXT_PUBLIC_API_URL ||
+       'https://ministerial-yetta-fodi999-c58d8823.koyeb.app');
 
 function authHeaders(token: string) {
   return {
@@ -31,7 +35,7 @@ export interface LabComboPage {
   h1: string;
   intro: string;
   why_it_works: string;
-  how_to_cook: { step: number; text: string; time_minutes?: number }[];
+  how_to_cook: { step: number; text?: string; description?: string; time_minutes?: number; duration_minutes?: number }[];
   optimization_tips: { icon: string; action: string; ingredient: string; tip: string }[];
   image_url: string | null;
   process_image_url: string | null;
@@ -107,6 +111,18 @@ export interface UpdateComboRequest {
 }
 
 // ── API Functions ────────────────────────────────────────────────────
+
+/** GET /api/admin/lab-combos/:id */
+export async function getCombo(
+  token: string,
+  id: string,
+): Promise<LabComboPage> {
+  const res = await fetch(`${API_BASE}/api/admin/lab-combos/${id}`, {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error(`Failed to get combo: ${res.status}`);
+  return res.json();
+}
 
 /** GET /api/admin/lab-combos?status=...&locale=...&limit=...&offset=... */
 export async function getLabCombos(
@@ -301,5 +317,66 @@ export async function backfillStructuredIngredients(
     headers: authHeaders(token),
   });
   if (!res.ok) throw new Error(`Backfill failed: ${res.status}`);
+  return res.json();
+}
+
+// ── Dish Classification Preview ──────────────────────────────────────
+
+export interface DishProfile {
+  dish_type: string;
+  type_label: string;
+  requires_forming: boolean;
+  requires_liquid: boolean;
+  requires_oven: boolean;
+  allowed_techniques: string[];
+  forbidden_techniques: string[];
+  expected_texture: {
+    outside: string;
+    inside: string;
+    temperature: string;
+  };
+  min_steps: number;
+}
+
+/** POST /api/admin/lab-combos/classify-dish — instant dish type preview */
+export async function classifyDish(
+  token: string,
+  dishName: string,
+): Promise<DishProfile> {
+  const res = await fetch(`${API_BASE}/api/admin/lab-combos/classify-dish`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ dish_name: dishName }),
+  });
+  if (!res.ok) throw new Error(`Classify failed: ${res.status}`);
+  return res.json();
+}
+
+// ── Pipeline Metrics ────────────────────────────────────────────────
+
+export interface PipelineMetrics {
+  generations_total: number;
+  generations_success: number;
+  generations_failed: number;
+  validations_passed: number;
+  validations_failed: number;
+  fix_attempts: number;
+  fix_successes: number;
+  ai_calls_total: number;
+  ai_errors: number;
+  total_generation_ms: number;
+  success_rate: number;
+  fix_success_rate: number;
+  avg_generation_ms: number;
+}
+
+/** GET /api/admin/lab-combos/metrics — pipeline observability */
+export async function getPipelineMetrics(
+  token: string,
+): Promise<PipelineMetrics> {
+  const res = await fetch(`${API_BASE}/api/admin/lab-combos/metrics`, {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error(`Metrics failed: ${res.status}`);
   return res.json();
 }

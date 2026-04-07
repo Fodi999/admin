@@ -1,5 +1,9 @@
 // API helper functions
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL =
+  typeof window !== 'undefined'
+    ? '/api/backend'
+    : (process.env.NEXT_PUBLIC_API_URL ||
+       'https://ministerial-yetta-fodi999-c58d8823.koyeb.app');
 
 export interface LoginResponse {
   token: string;

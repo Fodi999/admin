@@ -31,7 +31,6 @@ import {
   deleteProductStates,
   publishProduct,
   unpublishProduct,
-  updateProductState,
   type Product,
   type Category,
   type UpdateProductRequest,
@@ -50,7 +49,6 @@ import {
   type SearchProductResult,
   type IngredientState,
   type IngredientStatesResponse,
-  type UpdateStatePayload,
 } from '@/lib/admin-api';
 import { getToken, clearToken } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -66,7 +64,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Camera, Loader2, ArrowLeft, Save, Sparkles, Search, Globe, X, Plus, Pencil, BarChart3 } from 'lucide-react';
+import { Camera, Loader2, ArrowLeft, Save, Sparkles, Search, Globe, X, Plus } from 'lucide-react';
 
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter', 'AllYear'];
 const SEASON_MONTHS: Record<string, number[]> = {
@@ -146,8 +144,6 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     og_description: '',
     og_image: '',
   });
-  // 'auto' = read-only, using AI/generated values; 'override' = admin can edit
-  const [seoMode, setSeoMode] = useState<'auto' | 'override'>('auto');
   const [seoLoading, setSeoLoading] = useState(false);
   // Pairing state
   const [pairings, setPairings] = useState<PairingsResponse | null>(null);
@@ -159,16 +155,13 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   const [addPairingStrength, setAddPairingStrength] = useState<number>(8);
   const [statesData, setStatesData] = useState<IngredientStatesResponse | null>(null);
   const [statesLoading, setStatesLoading] = useState(false);
-  const [statesGenerating, setStatesGenerating] = useState(false);
-  const [editingState, setEditingState] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<UpdateStatePayload>({});
-  const [stateSaving, setStateSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('basic');
+  const [statesGenerating, setStatesGenerating] = useState(false);  const [activeTab, setActiveTab] = useState<Tab>('basic');
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
-  const [publishLoading, setPublishLoading] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
@@ -197,25 +190,6 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       })
       .finally(() => setLoading(false));
   }, [id]);
-
-  /** Reload product + nutrition from server — call after any save */
-  async function reloadProduct() {
-    const token = getToken();
-    if (!token) return;
-    try {
-      const [p, nutr] = await Promise.all([
-        getProduct(token, id),
-        nutritionGetProduct(token, id).catch(() => null),
-      ]);
-      const cached = bustImageCache(p);
-      setProduct(cached);
-      resetForm(cached);
-      if (nutr) {
-        setNutrition(nutr);
-        resetNutritionForms(nutr);
-      }
-    } catch { /* silent */ }
-  }
 
   function resetForm(p: Product) {
     setForm({
@@ -266,6 +240,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
 
   function set<K extends keyof UpdateProductRequest>(key: K, value: UpdateProductRequest[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
   }
 
   function toggleSeason(season: string) {
@@ -298,11 +273,10 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       const cached = bustImageCache(updated);
       setProduct(cached);
       resetForm(cached);
-      await reloadProduct();
       setMessage({ type: 'ok', text: '✅ Основные данные сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setDirty(false); }
   }
 
   async function handleSaveWithAutoTranslate() {
@@ -317,7 +291,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       setMessage({ type: 'ok', text: '✅ Сохранено + автоперевод применён!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setDirty(false); }
   }
 
   async function handleSaveMacros() {
@@ -325,12 +299,17 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     if (!token) { router.push('/login'); return; }
     setSaving(true); setMessage(null);
     try {
-      await nutritionUpdateMacros(token, id, macros);
-      await reloadProduct();
-      setMessage({ type: 'ok', text: '✅ Нутриенты сохранены!' });
+      await Promise.all([
+        nutritionUpdateMacros(token, id, macros),
+        nutritionUpdateBasic(token, id, nutritionBasic),
+      ]);
+      // 🔥 Рефетч — синхронизируем UI с сервером
+      const fresh = await nutritionGetProduct(token, id).catch(() => null);
+      if (fresh) { setNutrition(fresh); resetNutritionForms(fresh); }
+      setMessage({ type: 'ok', text: '✅ Нутриенты + физ. свойства сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setDirty(false); }
   }
 
   async function handleSaveAllergens() {
@@ -342,11 +321,12 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         nutritionUpdateAllergens(token, id, allergens),
         nutritionUpdateDietFlags(token, id, dietFlags),
       ]);
-      await reloadProduct();
+      const fresh = await nutritionGetProduct(token, id).catch(() => null);
+      if (fresh) { setNutrition(fresh); resetNutritionForms(fresh); }
       setMessage({ type: 'ok', text: '✅ Аллергены и диет-флаги сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setDirty(false); }
   }
 
   async function handleSaveCulinary() {
@@ -358,11 +338,12 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         nutritionUpdateCulinary(token, id, culinary),
         nutritionUpdateBasic(token, id, nutritionBasic),
       ]);
-      await reloadProduct();
+      const fresh = await nutritionGetProduct(token, id).catch(() => null);
+      if (fresh) { setNutrition(fresh); resetNutritionForms(fresh); }
       setMessage({ type: 'ok', text: '✅ Кулинарные данные сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setDirty(false); }
   }
 
   async function handleSaveSeasonality() {
@@ -371,11 +352,12 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     setSaving(true); setMessage(null);
     try {
       await nutritionUpdateBasic(token, id, { availability_months: nutritionBasic.availability_months });
-      await reloadProduct();
+      const fresh = await nutritionGetProduct(token, id).catch(() => null);
+      if (fresh) { setNutrition(fresh); resetNutritionForms(fresh); }
       setMessage({ type: 'ok', text: '✅ Сезонность сохранена!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setDirty(false); }
   }
 
   async function handleSaveVitamins() {
@@ -388,11 +370,12 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         nutritionUpdateMinerals(token, id, minerals),
         nutritionUpdateFattyAcids(token, id, fattyAcids),
       ]);
-      await reloadProduct();
+      const fresh = await nutritionGetProduct(token, id).catch(() => null);
+      if (fresh) { setNutrition(fresh); resetNutritionForms(fresh); }
       setMessage({ type: 'ok', text: '✅ Витамины и минералы сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setDirty(false); }
   }
 
   async function handleSaveFoodProps() {
@@ -401,11 +384,12 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     setSaving(true); setMessage(null);
     try {
       await nutritionUpdateFoodProperties(token, id, foodProps);
-      await reloadProduct();
+      const fresh = await nutritionGetProduct(token, id).catch(() => null);
+      if (fresh) { setNutrition(fresh); resetNutritionForms(fresh); }
       setMessage({ type: 'ok', text: '✅ Физические свойства сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setDirty(false); }
   }
 
   async function handleSaveSeo() {
@@ -427,7 +411,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       setMessage({ type: 'ok', text: '✅ SEO данные сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setDirty(false); }
   }
 
   async function handleGenerateSeo() {
@@ -517,23 +501,20 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     return () => clearTimeout(timeout);
   }, [pairingSearch, id]);
 
-
-  // ── Publish / Unpublish ─────────────────────────────────────────
-  async function handlePublishToggle() {
-    if (!product) return;
+  // ── AI Autofill ──────────────────────────────────────────────────
+  async function handleTogglePublish() {
     const token = getToken();
-    if (!token) { router.push('/login'); return; }
-    setPublishLoading(true); setMessage(null);
+    if (!token || !product) return;
+    setPublishing(true);
+    setMessage(null);
     try {
       const updated = product.is_published
-        ? await unpublishProduct(token, product.id)
-        : await publishProduct(token, product.id);
+        ? await unpublishProduct(token, id)
+        : await publishProduct(token, id);
       setProduct(updated);
       setMessage({
         type: 'ok',
-        text: updated.is_published
-          ? '✅ Продукт опубликован в блоге!'
-          : '📝 Продукт снят с публикации (черновик)',
+        text: updated.is_published ? '✅ Продукт опубликован!' : '📝 Продукт снят с публикации',
       });
     } catch (err) {
       setMessage({
@@ -541,27 +522,15 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         text: err instanceof Error ? err.message : 'Ошибка публикации',
       });
     } finally {
-      setPublishLoading(false);
+      setPublishing(false);
     }
   }
 
-  // ── AI Autofill ──────────────────────────────────────────────────
   async function handleAiAutofill() {
     const token = getToken();
     if (!token) { router.push('/login'); return; }
     setAiLoading(true); setMessage(null);
     try {
-      // ── Pre-save: sync form → DB so AI sees current field state ──
-      // If user cleared descriptions in the form but didn't save,
-      // AI would still see old filled values from DB and skip them.
-      const presaveData: Record<string, unknown> = {};
-      // Always sync description fields (even empty string = "clear it")
-      presaveData.description_en = form.description_en ?? '';
-      presaveData.description_ru = form.description_ru ?? '';
-      presaveData.description_pl = form.description_pl ?? '';
-      presaveData.description_uk = form.description_uk ?? '';
-      await updateProduct(token, id, presaveData as UpdateProductRequest);
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ai: any = await aiAutofillProduct(token, id);
 
@@ -719,10 +688,24 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       }
 
       await Promise.all(savePromises);
+
+      // 🔥 Рефетч — синхронизируем UI с реальными данными сервера
+      const [freshProduct, freshNutrition] = await Promise.all([
+        getProduct(token, id),
+        nutritionGetProduct(token, id).catch(() => null),
+      ]);
+      const cachedProduct = bustImageCache(freshProduct);
+      setProduct(cachedProduct);
+      resetForm(cachedProduct);
+      if (freshNutrition) {
+        setNutrition(freshNutrition);
+        resetNutritionForms(freshNutrition);
+      }
+
       setMessage({ type: 'ok', text: '🤖✅ AI заполнил и сохранил все данные!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ AI: ${err instanceof Error ? err.message : 'Ошибка'}` });
-    } finally { setAiLoading(false); }
+    } finally { setAiLoading(false); setDirty(false); }
   }
 
   /** Filter out null values from an object (keep only real AI suggestions) */
@@ -805,7 +788,10 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     <div className="max-w-4xl mx-auto space-y-6 pb-12 animate-in fade-in duration-500">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => router.push('/products')} className="rounded-xl">
+        <Button variant="ghost" size="sm" onClick={() => {
+          if (dirty && !confirm('⚠️ Есть несохранённые данные. Выйти без сохранения?')) return;
+          router.push('/products');
+        }} className="rounded-xl">
           <ArrowLeft className="h-4 w-4 mr-1" />
           Назад
         </Button>
@@ -825,8 +811,27 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
             {nutrition?.product_type && (
               <Badge variant="outline" className="text-[10px] h-5">{nutrition.product_type}</Badge>
             )}
+            {product.is_published ? (
+              <Badge className="text-[10px] h-5 bg-green-100 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-400">✓ Опубликован</Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px] h-5 text-muted-foreground/60">Черновик</Badge>
+            )}
           </div>
         </div>
+        {/* Publish / Unpublish button */}
+        <Button
+          variant={product.is_published ? "outline" : "default"}
+          size="sm"
+          onClick={handleTogglePublish}
+          disabled={publishing || saving}
+          className={product.is_published
+            ? "rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/30 shrink-0"
+            : "rounded-xl bg-green-600 hover:bg-green-700 text-white shrink-0"
+          }
+        >
+          {publishing ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+          {product.is_published ? '📝 Снять' : '🚀 Опубликовать'}
+        </Button>
         {/* AI Autofill button */}
         <Button
           variant="outline"
@@ -837,20 +842,6 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         >
           {aiLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
           {aiLoading ? 'AI думает...' : '🤖 AI Заполнить'}
-        </Button>
-        {/* Publish / Unpublish button */}
-        <Button
-          variant={product.is_published ? "outline" : "default"}
-          size="sm"
-          onClick={handlePublishToggle}
-          disabled={publishLoading || saving}
-          className={product.is_published
-            ? "rounded-xl border-green-300 text-green-700 bg-green-50 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:bg-green-950/30 dark:text-green-300 dark:border-green-800 shrink-0"
-            : "rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shrink-0"
-          }
-        >
-          {publishLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
-          {product.is_published ? '✅ Опубликован' : '📢 Опубликовать'}
         </Button>
         {/* Product image thumbnail in header */}
         {product.image_url && (
@@ -1048,8 +1039,8 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   <Label className="text-xs text-muted-foreground">{label}</Label>
                   <Input
                     type="number" step="0.1" min="0" className="rounded-xl tabular-nums"
-                    value={macros[key] != null ? Number(Number(macros[key]).toFixed(2)) : ''}
-                    onChange={(e) => setMacros((prev) => ({ ...prev, [key]: e.target.value ? parseFloat(e.target.value) : null }))}
+                    value={macros[key] ?? ''}
+                    onChange={(e) => { setMacros((prev) => ({ ...prev, [key]: e.target.value ? Number(e.target.value) : null })); setDirty(true); }}
                     placeholder="—"
                   />
                 </div>
@@ -1072,8 +1063,8 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   <Label className="text-xs text-muted-foreground">{label}</Label>
                   <Input
                     type="number" step="0.1" min="0" className="rounded-xl tabular-nums"
-                    value={(nutritionBasic[key] as number | undefined) != null ? Number(Number(nutritionBasic[key] as number).toFixed(2)) : ''}
-                    onChange={(e) => setNutritionBasic((prev) => ({ ...prev, [key]: e.target.value ? parseFloat(e.target.value) : undefined }))}
+                    value={(nutritionBasic[key] as number | undefined) ?? ''}
+                    onChange={(e) => { setNutritionBasic((prev) => ({ ...prev, [key]: e.target.value ? Number(e.target.value) : undefined })); setDirty(true); }}
                     placeholder="—"
                   />
                 </div>
@@ -1183,29 +1174,8 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   <SelectTrigger className="rounded-xl"><SelectValue placeholder="Выберите тип" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">— не выбрано —</SelectItem>
-                    {[
-                      { value: 'fish', label: '🐟 Рыба' },
-                      { value: 'seafood', label: '🦐 Морепродукты' },
-                      { value: 'meat', label: '🥩 Мясо' },
-                      { value: 'vegetable', label: '🥦 Овощи' },
-                      { value: 'fruit', label: '🍎 Фрукты' },
-                      { value: 'dairy', label: '🧀 Молочные' },
-                      { value: 'egg', label: '🥚 Яйца' },
-                      { value: 'grain', label: '🌾 Зерновые' },
-                      { value: 'legume', label: '🫘 Бобовые' },
-                      { value: 'nut', label: '🥜 Орехи' },
-                      { value: 'mushroom', label: '🍄 Грибы' },
-                      { value: 'spice', label: '🌶 Специи' },
-                      { value: 'herb', label: '🌿 Травы' },
-                      { value: 'oil', label: '🫒 Масла' },
-                      { value: 'sauce', label: '🥫 Соусы' },
-                      { value: 'beverage', label: '🥤 Напитки' },
-                      { value: 'sweetener', label: '🍯 Подсластители' },
-                      { value: 'pasta', label: '🍝 Паста' },
-                      { value: 'bread', label: '🍞 Хлеб' },
-                      { value: 'other', label: '📦 Другое' },
-                    ].map((t) => (
-                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    {['fish', 'seafood', 'meat', 'vegetable', 'fruit', 'dairy', 'grain', 'spice', 'oil', 'beverage', 'other'].map((t) => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1234,9 +1204,8 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   <SelectContent>
                     <SelectItem value="__none__">— не указано —</SelectItem>
                     <SelectItem value="freshwater">💧 Пресная</SelectItem>
-                    <SelectItem value="sea">🌊 Морская</SelectItem>
+                    <SelectItem value="saltwater">🌊 Морская</SelectItem>
                     <SelectItem value="brackish">🏞 Солоноватая</SelectItem>
-                    <SelectItem value="both">🔄 Оба типа</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1499,375 +1468,196 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       )}
 
       {/* ── TAB: SEO ────────────────────────────────────────────────── */}
-      {activeTab === 'seo' && (() => {
-        // ── Audit computations ──────────────────────────────────────
-        const titleLen   = seo.seo_title?.length ?? 0;
-        const descLen    = seo.seo_description?.length ?? 0;
-        const h1Len      = seo.seo_h1?.length ?? 0;
+      {activeTab === 'seo' && (
+        <div className="space-y-5">
+          {/* AI Generate button */}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={handleGenerateSeo}
+              disabled={seoLoading || saving}
+              className="rounded-xl bg-gradient-to-r from-violet-50 to-purple-50 hover:from-violet-100 hover:to-purple-100 border-violet-200 text-violet-700 dark:from-violet-950/30 dark:to-purple-950/30 dark:text-violet-300 dark:border-violet-800"
+            >
+              {seoLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
+              {seoLoading ? 'AI генерирует...' : '🤖 Сгенерировать SEO с AI'}
+            </Button>
+            <span className="text-xs text-muted-foreground">AI сгенерирует title, description, h1 и Open Graph</span>
+          </div>
 
-        type AuditStatus = 'ok' | 'warn' | 'err';
-        const auditTitle: AuditStatus  = titleLen >= 30 && titleLen <= 60 ? 'ok' : titleLen > 60 ? 'err' : 'warn';
-        const auditDesc: AuditStatus   = descLen >= 100 && descLen <= 155 ? 'ok' : descLen > 155 ? 'err' : 'warn';
-        const auditH1: AuditStatus     = h1Len > 0 ? 'ok' : 'warn';
-        const auditCanon: AuditStatus  = seo.canonical_url ? 'ok' : 'warn';
-        const auditOg: AuditStatus     = seo.og_image ? 'ok' : 'warn';
-
-        const auditScore = [auditTitle, auditDesc, auditH1, auditCanon, auditOg]
-          .filter((s) => s === 'ok').length;
-        const ctrLabel = auditScore >= 4 ? 'High 🚀' : auditScore >= 2 ? 'Medium ⚡' : 'Low 🔴';
-        const ctrColor = auditScore >= 4 ? 'text-emerald-600' : auditScore >= 2 ? 'text-amber-600' : 'text-red-500';
-
-        function AuditRow({ label, status, detail }: { label: string; status: AuditStatus; detail: string }) {
-          const icon = status === 'ok' ? '✅' : status === 'warn' ? '⚠️' : '❌';
-          const color = status === 'ok' ? 'text-emerald-600' : status === 'warn' ? 'text-amber-600' : 'text-red-500';
-          return (
-            <div className="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0">
-              <span className="text-sm font-medium">{icon} {label}</span>
-              <span className={`text-xs tabular-nums font-mono ${color}`}>{detail}</span>
+          {/* Google Preview */}
+          <section className="glass rounded-2xl p-5 space-y-3">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Search className="h-4 w-4" />
+              Предпросмотр в Google
+            </h2>
+            <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-border/50 max-w-xl">
+              <div className="text-xs text-green-700 dark:text-green-400 font-normal mb-0.5 truncate">
+                {seo.canonical_url || `https://dima-fomin.pl/ingredients/${product.slug || 'slug'}`}
+              </div>
+              <div className="text-blue-700 dark:text-blue-400 text-lg font-medium leading-snug mb-1 line-clamp-1 hover:underline cursor-pointer">
+                {seo.seo_title || `${product.name_en} — Nutrition | dima-fomin.pl`}
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 leading-relaxed">
+                {seo.seo_description || 'Meta description will appear here...'}
+              </div>
             </div>
-          );
-        }
+          </section>
 
-        const isAuto = seoMode === 'auto';
-        const activeTitle = seo.seo_title || `${product.name_en} — Nutrition | dima-fomin.pl`;
-        const activeDesc  = seo.seo_description || 'Meta description will appear here...';
-
-        return (
-          <div className="space-y-5">
-
-            {/* ── Mode Toggle ─────────────────────────────────────── */}
-            <section className="glass rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkles className="h-4 w-4 text-violet-500" />
-                <span className="text-sm font-semibold">Режим SEO</span>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setSeoMode('auto')}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                    isAuto
-                      ? 'bg-violet-500 text-white border-violet-500 shadow-sm'
-                      : 'bg-muted text-muted-foreground border-border hover:border-violet-300'
-                  }`}
-                >
-                  <span className="text-base">🤖</span>
-                  Авто SEO
-                  {isAuto && <span className="text-[10px] bg-white/20 rounded px-1">рекомендуется</span>}
-                </button>
-                <button
-                  onClick={() => setSeoMode('override')}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                    !isAuto
-                      ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                      : 'bg-muted text-muted-foreground border-border hover:border-amber-300'
-                  }`}
-                >
-                  <span className="text-base">✏️</span>
-                  Ручной override
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2.5">
-                {isAuto
-                  ? 'SEO генерируется автоматически. Нажмите «Перегенерировать» чтобы обновить.'
-                  : 'Вы редактируете SEO вручную. Ваши данные заменят автоматически сгенерированные.'}
-              </p>
-            </section>
-
-            {/* ── Google SERP Preview ─────────────────────────────── */}
-            <section className="glass rounded-2xl p-5 space-y-3">
-              <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                <Search className="h-4 w-4" />
-                Предпросмотр в Google
-              </h2>
-              <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-border/50 max-w-xl">
-                <div className="text-xs text-green-700 dark:text-green-400 font-normal mb-0.5 truncate">
-                  {seo.canonical_url || `https://dima-fomin.pl/en/chef-tools/nutrition/${product.slug || 'slug'}`}
-                </div>
-                <div className="text-blue-700 dark:text-blue-400 text-lg font-medium leading-snug mb-1 line-clamp-1">
-                  {activeTitle}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 leading-relaxed">
-                  {activeDesc}
-                </div>
-              </div>
-            </section>
-
-            {/* ── SEO Audit ───────────────────────────────────────── */}
-            <section className="glass rounded-2xl p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4" />
-                  SEO Audit
-                </h2>
-                <span className={`text-sm font-bold ${ctrColor}`}>
-                  CTR Potential: {ctrLabel}
-                </span>
-              </div>
-              <div className="bg-muted/40 rounded-xl p-3">
-                <AuditRow
-                  label="Title"
-                  status={auditTitle}
-                  detail={titleLen === 0 ? 'не задан' : `${titleLen} символов ${titleLen > 60 ? '— слишком длинный' : titleLen < 30 ? '— слишком короткий' : '✓'}`}
-                />
-                <AuditRow
-                  label="Description"
-                  status={auditDesc}
-                  detail={descLen === 0 ? 'не задан' : `${descLen} символов ${descLen > 155 ? '— слишком длинный' : descLen < 100 ? '— добавьте больше текста' : '✓'}`}
-                />
-                <AuditRow
-                  label="H1"
-                  status={auditH1}
-                  detail={h1Len > 0 ? `${h1Len} символов` : 'не задан'}
-                />
-                <AuditRow
-                  label="Canonical URL"
-                  status={auditCanon}
-                  detail={seo.canonical_url ? 'задан ✓' : 'не задан'}
-                />
-                <AuditRow
-                  label="OG Image"
-                  status={auditOg}
-                  detail={seo.og_image ? 'задан ✓' : 'не задана — соц. сети покажут placeholder'}
-                />
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="font-mono bg-muted rounded px-1.5 py-0.5">{auditScore}/5</span>
-                <span>SEO-показателей в норме</span>
-              </div>
-            </section>
-
-            {/* ── Meta Fields (auto: read-only | override: editable) ── */}
-            <section className="glass rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">🏷️ Meta Tags</h2>
-                {isAuto ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleGenerateSeo}
-                    disabled={seoLoading}
-                    className="rounded-xl text-xs h-8 border-violet-300 text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:border-violet-800"
-                  >
-                    {seoLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : '🔄'}
-                    {seoLoading ? 'Генерируется...' : 'Перегенерировать'}
-                  </Button>
-                ) : (
-                  <span className="text-[10px] text-amber-600 font-medium bg-amber-50 dark:bg-amber-950/30 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800">
-                    ✏️ Override режим
+          {/* SEO Fields */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">🏷️ Meta Tags</h2>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="flex items-center justify-between">
+                  <span>SEO Title</span>
+                  <span className={`text-xs tabular-nums ${(seo.seo_title?.length || 0) > 60 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
+                    {seo.seo_title?.length || 0}/60
                   </span>
-                )}
+                </Label>
+                <Input
+                  value={seo.seo_title}
+                  onChange={(e) => setSeo((prev) => ({ ...prev, seo_title: e.target.value }))}
+                  className="rounded-xl"
+                  placeholder="Product Name — Nutrition, Vitamins | dima-fomin.pl"
+                  maxLength={80}
+                />
               </div>
-              <div className="space-y-4">
 
-                {/* SEO Title */}
-                <div className="space-y-1.5">
-                  <Label className="flex items-center justify-between">
-                    <span>SEO Title</span>
-                    <span className={`text-xs tabular-nums ${titleLen > 60 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                      {titleLen}/60
-                    </span>
-                  </Label>
-                  {isAuto ? (
-                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground select-text min-h-[40px]">
-                      {seo.seo_title || <span className="italic text-muted-foreground/50">автоматически: {product.name_en} — Nutrition | dima-fomin.pl</span>}
-                    </div>
-                  ) : (
-                    <Input
-                      value={seo.seo_title}
-                      onChange={(e) => setSeo((prev) => ({ ...prev, seo_title: e.target.value }))}
-                      className="rounded-xl"
-                      placeholder="Product Name — Nutrition, Vitamins | dima-fomin.pl"
-                      maxLength={80}
-                    />
-                  )}
-                </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center justify-between">
+                  <span>SEO Description</span>
+                  <span className={`text-xs tabular-nums ${(seo.seo_description?.length || 0) > 155 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
+                    {seo.seo_description?.length || 0}/155
+                  </span>
+                </Label>
+                <Textarea
+                  value={seo.seo_description}
+                  onChange={(e) => setSeo((prev) => ({ ...prev, seo_description: e.target.value }))}
+                  className="rounded-xl resize-none"
+                  rows={3}
+                  placeholder="Compelling meta description with nutrition keywords..."
+                  maxLength={200}
+                />
+              </div>
 
-                {/* SEO Description */}
-                <div className="space-y-1.5">
-                  <Label className="flex items-center justify-between">
-                    <span>SEO Description</span>
-                    <span className={`text-xs tabular-nums ${descLen > 155 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                      {descLen}/155
-                    </span>
-                  </Label>
-                  {isAuto ? (
-                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground min-h-[72px] leading-relaxed select-text">
-                      {seo.seo_description || <span className="italic text-muted-foreground/50">автоматически — нажмите «Перегенерировать»</span>}
-                    </div>
-                  ) : (
-                    <Textarea
-                      value={seo.seo_description}
-                      onChange={(e) => setSeo((prev) => ({ ...prev, seo_description: e.target.value }))}
-                      className="rounded-xl resize-none"
-                      rows={3}
-                      placeholder="Compelling meta description with nutrition keywords..."
-                      maxLength={200}
-                    />
-                  )}
-                </div>
+              <div className="space-y-1.5">
+                <Label>SEO H1</Label>
+                <Input
+                  value={seo.seo_h1}
+                  onChange={(e) => setSeo((prev) => ({ ...prev, seo_h1: e.target.value }))}
+                  className="rounded-xl"
+                  placeholder="Product Name — Nutrition & Culinary Profile"
+                />
+              </div>
 
-                {/* H1 */}
-                <div className="space-y-1.5">
-                  <Label>SEO H1</Label>
-                  {isAuto ? (
-                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground select-text min-h-[40px]">
-                      {seo.seo_h1 || <span className="italic text-muted-foreground/50">автоматически</span>}
-                    </div>
-                  ) : (
-                    <Input
-                      value={seo.seo_h1}
-                      onChange={(e) => setSeo((prev) => ({ ...prev, seo_h1: e.target.value }))}
-                      className="rounded-xl"
-                      placeholder="Product Name — Nutrition & Culinary Profile"
-                    />
-                  )}
-                </div>
+              <div className="space-y-1.5">
+                <Label>Canonical URL</Label>
+                <Input
+                  value={seo.canonical_url}
+                  onChange={(e) => setSeo((prev) => ({ ...prev, canonical_url: e.target.value }))}
+                  className="rounded-xl"
+                  placeholder="https://dima-fomin.pl/ingredients/product-slug"
+                />
+              </div>
+            </div>
+          </section>
 
-                {/* Canonical — always editable (important for SEO) */}
-                <div className="space-y-1.5">
-                  <Label className="flex items-center gap-1.5">
-                    Canonical URL
-                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">всегда доступно</span>
-                  </Label>
-                  <Input
-                    value={seo.canonical_url}
-                    onChange={(e) => setSeo((prev) => ({ ...prev, canonical_url: e.target.value }))}
-                    className="rounded-xl"
-                    placeholder={`https://dima-fomin.pl/en/chef-tools/nutrition/${product.slug || 'slug'}`}
+          {/* Open Graph */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              Open Graph (соц. сети)
+            </h2>
+
+            {/* OG Preview */}
+            <div className="bg-white dark:bg-zinc-900 rounded-xl border border-border/50 overflow-hidden max-w-md">
+              {(seo.og_image || product.image_url) && (
+                <div className="relative w-full h-40 bg-muted">
+                  <Image
+                    src={seo.og_image || product.image_url || ''}
+                    alt="OG Preview"
+                    fill
+                    className="object-cover"
+                    sizes="400px"
                   />
                 </div>
-              </div>
-            </section>
-
-            {/* ── Open Graph ─────────────────────────────────────── */}
-            <section className="glass rounded-2xl p-5 space-y-4">
-              <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                <Globe className="h-4 w-4" />
-                Open Graph (соц. сети)
-                {isAuto && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-normal">auto</span>}
-              </h2>
-
-              {/* OG Preview */}
-              <div className="bg-white dark:bg-zinc-900 rounded-xl border border-border/50 overflow-hidden max-w-md">
-                {(seo.og_image || product.image_url) && (
-                  <div className="relative w-full h-40 bg-muted">
-                    <Image
-                      src={seo.og_image || product.image_url || ''}
-                      alt="OG Preview"
-                      fill
-                      className="object-cover"
-                      sizes="400px"
-                    />
-                  </div>
-                )}
-                <div className="p-3 space-y-1">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider">dima-fomin.pl</div>
-                  <div className="text-sm font-semibold line-clamp-2">
-                    {seo.og_title || seo.seo_title || product.name_en}
-                  </div>
-                  <div className="text-xs text-muted-foreground line-clamp-2">
-                    {seo.og_description || seo.seo_description || ''}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label className="flex items-center justify-between">
-                    <span>OG Title</span>
-                    <span className={`text-xs tabular-nums ${(seo.og_title?.length || 0) > 65 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                      {seo.og_title?.length || 0}/65
-                    </span>
-                  </Label>
-                  {isAuto ? (
-                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground select-text min-h-[40px]">
-                      {seo.og_title || seo.seo_title || <span className="italic text-muted-foreground/50">= SEO Title</span>}
-                    </div>
-                  ) : (
-                    <Input
-                      value={seo.og_title}
-                      onChange={(e) => setSeo((prev) => ({ ...prev, og_title: e.target.value }))}
-                      className="rounded-xl"
-                      placeholder="Engaging social media title"
-                      maxLength={80}
-                    />
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="flex items-center justify-between">
-                    <span>OG Description</span>
-                    <span className={`text-xs tabular-nums ${(seo.og_description?.length || 0) > 200 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                      {seo.og_description?.length || 0}/200
-                    </span>
-                  </Label>
-                  {isAuto ? (
-                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground min-h-[56px] select-text">
-                      {seo.og_description || seo.seo_description || <span className="italic text-muted-foreground/50">= SEO Description</span>}
-                    </div>
-                  ) : (
-                    <Textarea
-                      value={seo.og_description}
-                      onChange={(e) => setSeo((prev) => ({ ...prev, og_description: e.target.value }))}
-                      className="rounded-xl resize-none"
-                      rows={2}
-                      placeholder="Social-friendly description..."
-                      maxLength={250}
-                    />
-                  )}
-                </div>
-
-                {/* OG Image — always editable */}
-                <div className="space-y-1.5">
-                  <Label className="flex items-center gap-1.5">
-                    OG Image URL
-                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">всегда доступно</span>
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={seo.og_image}
-                      onChange={(e) => setSeo((prev) => ({ ...prev, og_image: e.target.value }))}
-                      className="rounded-xl flex-1"
-                      placeholder="https://..."
-                    />
-                    {product.image_url && !seo.og_image && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="rounded-xl shrink-0"
-                        onClick={() => setSeo((prev) => ({ ...prev, og_image: product.image_url || '' }))}
-                      >
-                        Из фото
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* ── Save ────────────────────────────────────────────── */}
-            <div className="flex items-center gap-3">
-              <Button onClick={handleSaveSeo} disabled={saving} className="h-11 px-8 rounded-xl font-semibold">
-                {saving
-                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Сохранение...</>
-                  : <><Save className="mr-2 h-4 w-4" />Сохранить{!isAuto ? ' override' : ' SEO'}</>}
-              </Button>
-              {!isAuto && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground"
-                  onClick={() => {
-                    setSeoMode('auto');
-                  }}
-                >
-                  ← Вернуться в авто
-                </Button>
               )}
+              <div className="p-3 space-y-1">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">dima-fomin.pl</div>
+                <div className="text-sm font-semibold line-clamp-2">
+                  {seo.og_title || seo.seo_title || product.name_en}
+                </div>
+                <div className="text-xs text-muted-foreground line-clamp-2">
+                  {seo.og_description || seo.seo_description || ''}
+                </div>
+              </div>
             </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="flex items-center justify-between">
+                  <span>OG Title</span>
+                  <span className={`text-xs tabular-nums ${(seo.og_title?.length || 0) > 65 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
+                    {seo.og_title?.length || 0}/65
+                  </span>
+                </Label>
+                <Input
+                  value={seo.og_title}
+                  onChange={(e) => setSeo((prev) => ({ ...prev, og_title: e.target.value }))}
+                  className="rounded-xl"
+                  placeholder="Engaging social media title"
+                  maxLength={80}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="flex items-center justify-between">
+                  <span>OG Description</span>
+                  <span className={`text-xs tabular-nums ${(seo.og_description?.length || 0) > 200 ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
+                    {seo.og_description?.length || 0}/200
+                  </span>
+                </Label>
+                <Textarea
+                  value={seo.og_description}
+                  onChange={(e) => setSeo((prev) => ({ ...prev, og_description: e.target.value }))}
+                  className="rounded-xl resize-none"
+                  rows={2}
+                  placeholder="Social-friendly description..."
+                  maxLength={250}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>OG Image URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={seo.og_image}
+                    onChange={(e) => setSeo((prev) => ({ ...prev, og_image: e.target.value }))}
+                    className="rounded-xl flex-1"
+                    placeholder="https://..."
+                  />
+                  {product.image_url && !seo.og_image && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl shrink-0"
+                      onClick={() => setSeo((prev) => ({ ...prev, og_image: product.image_url || '' }))}
+                    >
+                      Из фото
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div className="flex items-center gap-3">
+            <Button onClick={handleSaveSeo} disabled={saving} className="h-11 px-8 rounded-xl font-semibold">
+              {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Сохранение...</> : <><Save className="mr-2 h-4 w-4" />Сохранить SEO</>}
+            </Button>
           </div>
-        );
-      })()}
+        </div>
+      )}
 
       {/* ── TAB: PAIRING ───────────────────────────────────────────── */}
       {activeTab === 'pairing' && (
@@ -2109,19 +1899,10 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   heat: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
                   preserved: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
                 };
-                const methodLabel: Record<string, string> = {
-                  raw: '🥬 сырой', boiled: '♨️ варка', steamed: '💨 пар',
-                  baked: '🍞 духовка', grilled: '🔥 гриль', pan_fried: '🍳 жарка',
-                  deep_fried: '🫕 фритюр', air_fried: '🌀 аэро', smoked: '🌫️ копч.',
-                  dried: '☀️ сушка', fermented: '🧪 ферм.', frozen: '🧊 замор.',
-                  pickled: '🥒 маринад',
-                };
                 const wc = s.weight_change_percent;
                 const wcColor = wc != null && wc < 0 ? 'text-red-500' : wc != null && wc > 0 ? 'text-green-600' : 'text-muted-foreground';
-                const isEditing = editingState === s.state;
-
                 return (
-                  <div key={s.state} className={`glass rounded-2xl p-4 space-y-3 transition-all ${isEditing ? 'ring-2 ring-primary' : ''}`}>
+                  <div key={s.state} className="glass rounded-2xl p-4 space-y-3">
                     {/* Card header */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -2137,248 +1918,76 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                             {s.state_type}
                           </span>
                         )}
-                        {s.cooking_method && (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
-                            {methodLabel[s.cooking_method] || s.cooking_method}
-                          </span>
-                        )}
                         {s.data_score != null && (
                           <Badge variant={s.data_score >= 80 ? 'default' : 'secondary'} className="text-[10px] tabular-nums">
                             {s.data_score.toFixed(0)}%
                           </Badge>
                         )}
-                        {/* Edit button */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0"
-                          onClick={() => {
-                            if (isEditing) {
-                              setEditingState(null);
-                              setEditForm({});
-                            } else {
-                              setEditingState(s.state);
-                              setEditForm({
-                                calories_per_100g: s.calories_per_100g ?? undefined,
-                                protein_per_100g: s.protein_per_100g ?? undefined,
-                                fat_per_100g: s.fat_per_100g ?? undefined,
-                                carbs_per_100g: s.carbs_per_100g ?? undefined,
-                                fiber_per_100g: s.fiber_per_100g ?? undefined,
-                                water_percent: s.water_percent ?? undefined,
-                                glycemic_index: s.glycemic_index ?? undefined,
-                                weight_change_percent: s.weight_change_percent ?? undefined,
-                                oil_absorption_g: s.oil_absorption_g ?? undefined,
-                                water_loss_percent: s.water_loss_percent ?? undefined,
-                                shelf_life_hours: s.shelf_life_hours ?? undefined,
-                                storage_temp_c: s.storage_temp_c ?? undefined,
-                                texture: s.texture ?? undefined,
-                                notes_ru: s.notes_ru ?? undefined,
-                                notes_en: s.notes_en ?? undefined,
-                                notes_pl: s.notes_pl ?? undefined,
-                                notes_uk: s.notes_uk ?? undefined,
-                              });
-                            }
-                          }}
-                        >
-                          {isEditing ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-                        </Button>
                       </div>
                     </div>
 
-                    {/* === EDIT MODE === */}
-                    {isEditing ? (
-                      <div className="space-y-3">
-                        {/* Nutrition */}
-                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Нутриенты (на 100г)</div>
-                        <div className="grid grid-cols-3 gap-2">
-                          {([
-                            ['calories_per_100g', 'Ккал'],
-                            ['protein_per_100g', 'Белки'],
-                            ['fat_per_100g', 'Жиры'],
-                            ['carbs_per_100g', 'Угл.'],
-                            ['fiber_per_100g', 'Клетч.'],
-                            ['water_percent', 'Вода %'],
-                          ] as const).map(([key, label]) => (
-                            <div key={key}>
-                              <label className="text-[10px] text-muted-foreground">{label}</label>
-                              <Input
-                                type="number"
-                                step="0.1"
-                                className="h-7 text-xs tabular-nums"
-                                value={editForm[key] ?? ''}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, [key]: e.target.value === '' ? undefined : Number(e.target.value) }))}
-                              />
-                            </div>
-                          ))}
+                    {/* Macros row */}
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      {[
+                        { label: 'Ккал', value: s.calories_per_100g?.toFixed(0), bold: true },
+                        { label: 'Белки', value: s.protein_per_100g?.toFixed(1) },
+                        { label: 'Жиры', value: s.fat_per_100g?.toFixed(1) },
+                        { label: 'Угл.', value: s.carbs_per_100g?.toFixed(1) },
+                      ].map(({ label, value, bold }) => (
+                        <div key={label} className="bg-muted/30 rounded-xl py-1.5 px-1">
+                          <div className={`tabular-nums text-sm ${bold ? 'font-bold' : 'font-medium'}`}>{value ?? '—'}</div>
+                          <div className="text-[10px] text-muted-foreground">{label}</div>
                         </div>
+                      ))}
+                    </div>
 
-                        {/* Cooking + GI */}
-                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Термообработка</div>
-                        <div className="grid grid-cols-4 gap-2">
-                          {([
-                            ['glycemic_index', 'GI'],
-                            ['weight_change_percent', '⚖️ Вес %'],
-                            ['water_loss_percent', '💧 Вода %'],
-                            ['oil_absorption_g', '🫙 Масло г'],
-                          ] as const).map(([key, label]) => (
-                            <div key={key}>
-                              <label className="text-[10px] text-muted-foreground">{label}</label>
-                              <Input
-                                type="number"
-                                step={key === 'glycemic_index' ? '1' : '0.1'}
-                                className="h-7 text-xs tabular-nums"
-                                value={editForm[key] ?? ''}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, [key]: e.target.value === '' ? undefined : Number(e.target.value) }))}
-                              />
-                            </div>
-                          ))}
-                        </div>
+                    {/* Details row */}
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {s.texture && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          📋 {s.texture}
+                        </span>
+                      )}
+                      {wc != null && (
+                        <span className={`font-semibold px-2 py-0.5 rounded-lg bg-muted/40 ${wcColor}`}>
+                          ⚖️ {wc > 0 ? '+' : ''}{wc}%
+                        </span>
+                      )}
+                      {s.water_loss_percent != null && s.water_loss_percent > 0 && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          💧 -{s.water_loss_percent}%
+                        </span>
+                      )}
+                      {s.oil_absorption_g != null && s.oil_absorption_g > 0 && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          🫙 +{s.oil_absorption_g}г масла
+                        </span>
+                      )}
+                      {s.shelf_life_hours != null && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          🕐 {s.shelf_life_hours >= 24 ? `${Math.round(s.shelf_life_hours / 24)}д` : `${s.shelf_life_hours}ч`}
+                        </span>
+                      )}
+                      {s.storage_temp_c != null && (
+                        <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
+                          🌡️ {s.storage_temp_c}°C
+                        </span>
+                      )}
+                    </div>
 
-                        {/* Storage */}
-                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Хранение</div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div>
-                            <label className="text-[10px] text-muted-foreground">🕐 Срок (часы)</label>
-                            <Input type="number" className="h-7 text-xs tabular-nums" value={editForm.shelf_life_hours ?? ''} onChange={(e) => setEditForm(prev => ({ ...prev, shelf_life_hours: e.target.value === '' ? undefined : Number(e.target.value) }))} />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-muted-foreground">🌡️ Темп. °C</label>
-                            <Input type="number" className="h-7 text-xs tabular-nums" value={editForm.storage_temp_c ?? ''} onChange={(e) => setEditForm(prev => ({ ...prev, storage_temp_c: e.target.value === '' ? undefined : Number(e.target.value) }))} />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-muted-foreground">📋 Текстура</label>
-                            <Input type="text" className="h-7 text-xs" value={editForm.texture ?? ''} onChange={(e) => setEditForm(prev => ({ ...prev, texture: e.target.value || undefined }))} />
-                          </div>
+                    {/* Notes (collapsible) */}
+                    {(s.notes_ru || s.notes_en) && (
+                      <details className="group/notes">
+                        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+                          📝 Заметки...
+                        </summary>
+                        <div className="mt-1.5 space-y-1 text-xs text-muted-foreground pl-2 border-l-2 border-border/40">
+                          {s.notes_ru && <p>🇷🇺 {s.notes_ru}</p>}
+                          {s.notes_en && <p>🇬🇧 {s.notes_en}</p>}
+                          {s.notes_pl && <p>🇵🇱 {s.notes_pl}</p>}
+                          {s.notes_uk && <p>🇺🇦 {s.notes_uk}</p>}
                         </div>
-
-                        {/* Notes */}
-                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Заметки</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {([
-                            ['notes_ru', '🇷🇺 RU'],
-                            ['notes_en', '🇬🇧 EN'],
-                            ['notes_pl', '🇵🇱 PL'],
-                            ['notes_uk', '🇺🇦 UK'],
-                          ] as const).map(([key, label]) => (
-                            <div key={key}>
-                              <label className="text-[10px] text-muted-foreground">{label}</label>
-                              <textarea
-                                className="w-full h-14 text-xs rounded-lg border border-input bg-background px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-                                value={(editForm as Record<string, unknown>)[key] as string ?? ''}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, [key]: e.target.value || undefined }))}
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Save / Cancel */}
-                        <div className="flex items-center gap-2 pt-1">
-                          <Button
-                            size="sm"
-                            disabled={stateSaving}
-                            className="rounded-xl"
-                            onClick={async () => {
-                              const token = getToken();
-                              if (!token || !product) return;
-                              setStateSaving(true);
-                              setMessage(null);
-                              try {
-                                await updateProductState(token, product.id, s.state, editForm);
-                                setMessage({ type: 'ok', text: `✅ ${s.state} обновлён` });
-                                // Refresh states
-                                if (product.slug) {
-                                  const updated = await getProductStates(product.slug);
-                                  setStatesData(updated);
-                                }
-                                setEditingState(null);
-                                setEditForm({});
-                              } catch (e) {
-                                setMessage({ type: 'err', text: `❌ ${e instanceof Error ? e.message : 'Error'}` });
-                              } finally {
-                                setStateSaving(false);
-                              }
-                            }}
-                          >
-                            {stateSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-                            Сохранить
-                          </Button>
-                          <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => { setEditingState(null); setEditForm({}); }}>
-                            Отмена
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        {/* === VIEW MODE (original display) === */}
-                        {/* Macros row */}
-                        <div className="grid grid-cols-4 gap-2 text-center">
-                          {[
-                            { label: 'Ккал', value: s.calories_per_100g?.toFixed(0), bold: true },
-                            { label: 'Белки', value: s.protein_per_100g?.toFixed(1) },
-                            { label: 'Жиры', value: s.fat_per_100g?.toFixed(1) },
-                            { label: 'Угл.', value: s.carbs_per_100g?.toFixed(1) },
-                          ].map(({ label, value, bold }) => (
-                            <div key={label} className="bg-muted/30 rounded-xl py-1.5 px-1">
-                              <div className={`tabular-nums text-sm ${bold ? 'font-bold' : 'font-medium'}`}>{value ?? '—'}</div>
-                              <div className="text-[10px] text-muted-foreground">{label}</div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Details row */}
-                        <div className="flex flex-wrap gap-2 text-xs">
-                          {s.texture && (
-                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                              📋 {s.texture}
-                            </span>
-                          )}
-                          {wc != null && (
-                            <span className={`font-semibold px-2 py-0.5 rounded-lg bg-muted/40 ${wcColor}`}>
-                              ⚖️ {wc > 0 ? '+' : ''}{wc}%
-                            </span>
-                          )}
-                          {s.water_loss_percent != null && s.water_loss_percent > 0 && (
-                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                              💧 -{s.water_loss_percent}%
-                            </span>
-                          )}
-                          {s.oil_absorption_g != null && s.oil_absorption_g > 0 && (
-                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                              🫙 +{s.oil_absorption_g}г масла
-                            </span>
-                          )}
-                          {s.shelf_life_hours != null && (
-                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                              🕐 {s.shelf_life_hours >= 24 ? `${Math.round(s.shelf_life_hours / 24)}д` : `${s.shelf_life_hours}ч`}
-                            </span>
-                          )}
-                          {s.storage_temp_c != null && (
-                            <span className="bg-muted/40 px-2 py-0.5 rounded-lg text-muted-foreground">
-                              🌡️ {s.storage_temp_c}°C
-                            </span>
-                          )}
-                          {s.glycemic_index != null && (
-                            <span className={`font-semibold px-2 py-0.5 rounded-lg bg-muted/40 ${s.glycemic_index <= 55 ? 'text-green-600' : s.glycemic_index <= 69 ? 'text-yellow-600' : 'text-red-500'}`}>
-                              📊 GI {s.glycemic_index}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Notes (collapsible) */}
-                        {(s.notes_ru || s.notes_en) && (
-                          <details className="group/notes">
-                            <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                              📝 Заметки...
-                            </summary>
-                            <div className="mt-1.5 space-y-1 text-xs text-muted-foreground pl-2 border-l-2 border-border/40">
-                              {s.notes_ru && <p>🇷🇺 {s.notes_ru}</p>}
-                              {s.notes_en && <p>🇬🇧 {s.notes_en}</p>}
-                              {s.notes_pl && <p>🇵🇱 {s.notes_pl}</p>}
-                              {s.notes_uk && <p>🇺🇦 {s.notes_uk}</p>}
-                            </div>
-                          </details>
-                        )}
-                      </>
+                      </details>
                     )}
                   </div>
                 );
