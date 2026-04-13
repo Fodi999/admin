@@ -15,11 +15,36 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2, AlertTriangle, CheckCircle2, ArrowLeft, Plus } from "lucide-react";
+
+const PRODUCT_TYPES = [
+  { value: "vegetable", label: "🥦 Овощи" },
+  { value: "fruit", label: "🍎 Фрукты" },
+  { value: "meat", label: "🥩 Мясо и птица" },
+  { value: "seafood", label: "🐟 Рыба и морепродукты" },
+  { value: "dairy", label: "🥛 Молочные и яйца" },
+  { value: "grain", label: "🌾 Крупы и макароны" },
+  { value: "legume", label: "🫘 Бобовые" },
+  { value: "nut", label: "🌰 Орехи и семена" },
+  { value: "spice", label: "🌿 Специи и травы" },
+  { value: "oil", label: "🫙 Масла и жиры" },
+  { value: "beverage", label: "🧃 Напитки" },
+  { value: "condiment", label: "🧴 Соусы и приправы" },
+  { value: "bakery", label: "🍞 Выпечка и сладости" },
+  { value: "supplement", label: "💊 Добавки" },
+] as const;
 
 export default function NewProductPage() {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [productType, setProductType] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -36,12 +61,16 @@ export default function NewProductPage() {
       setError("Введите название продукта");
       return;
     }
+    if (!productType) {
+      setError("Выберите тип продукта");
+      return;
+    }
 
     setSaving(true);
     setError("");
 
     try {
-      // Отправляем name_input как name_en тоже + product_type
+      // Отправляем все 4 имени (= name_input) + product_type
       // чтобы бэкенд НЕ вызывал AI при создании.
       // AI autofill доступен потом через редактирование.
       const data: CreateProductRequest = {
@@ -50,7 +79,7 @@ export default function NewProductPage() {
         name_pl: trimmed,
         name_ru: trimmed,
         name_uk: trimmed,
-        product_type: "other",
+        product_type: productType,
       };
 
       const product = await createProduct(token, data);
@@ -92,8 +121,8 @@ export default function NewProductPage() {
             Добавить продукт
           </CardTitle>
           <CardDescription>
-            Введите название на любом языке — бэкенд автоматически переведёт и
-            классифицирует. Остальные поля заполните через редактирование.
+            Введите название и выберите тип — продукт появится в каталоге.
+            Остальные данные заполните через AI autofill в редактировании.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -122,6 +151,29 @@ export default function NewProductPage() {
             </p>
           </div>
 
+          <div className="space-y-2">
+            <Label>Тип продукта</Label>
+            <Select
+              value={productType}
+              onValueChange={(v) => {
+                setProductType(v);
+                setError("");
+              }}
+              disabled={saving || success}
+            >
+              <SelectTrigger className="text-base py-5">
+                <SelectValue placeholder="Выберите тип..." />
+              </SelectTrigger>
+              <SelectContent>
+                {PRODUCT_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {error && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
@@ -148,7 +200,7 @@ export default function NewProductPage() {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={saving || !name.trim() || success}
+              disabled={saving || !name.trim() || !productType || success}
               className="gap-2 flex-1"
             >
               {saving ? (
