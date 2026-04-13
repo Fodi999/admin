@@ -945,5 +945,125 @@ export async function getDataQuality(token: string): Promise<DataQualitySummary>
   return res.json();
 }
 
-export type DataSourceType = 'ai' | 'validation' | 'admin' | 'manual' | 'ai_corrected';
+export type DataSourceType = 'ai' | 'validation' | 'admin' | 'manual' | 'ai_corrected' | 'dictionary' | 'lookup';
 export type FieldConfidence = 'high' | 'medium' | 'low' | 'not_applicable';
+
+// ── AI Draft Types ───────────────────────────────────────────────────────────
+
+export interface DraftField<T> {
+  value: T | null;
+  source: DataSourceType;
+  confidence: FieldConfidence;
+}
+
+export interface DraftNames {
+  en: DraftField<string>;
+  ru: DraftField<string>;
+  pl: DraftField<string>;
+  uk: DraftField<string>;
+}
+
+export interface DraftNutrition {
+  calories_per_100g: DraftField<number>;
+  protein_per_100g: DraftField<number>;
+  fat_per_100g: DraftField<number>;
+  carbs_per_100g: DraftField<number>;
+  fiber_per_100g: DraftField<number>;
+  sugar_per_100g: DraftField<number>;
+  density_g_per_ml: DraftField<number>;
+  typical_portion_g: DraftField<number>;
+  shelf_life_days: DraftField<number>;
+}
+
+export interface DraftSeo {
+  seo_title: DraftField<string>;
+  seo_description: DraftField<string>;
+  seo_h1: DraftField<string>;
+}
+
+export interface ProductDraft {
+  names: DraftNames;
+  description_en: DraftField<string>;
+  description_ru: DraftField<string>;
+  description_pl: DraftField<string>;
+  description_uk: DraftField<string>;
+  product_type: DraftField<string>;
+  unit: DraftField<string>;
+  nutrition: DraftNutrition;
+  seo: DraftSeo;
+  seasons: DraftField<string[]>;
+  confidence: number;
+  needs_review: boolean;
+  quality_warnings: QualityWarning[];
+}
+
+export interface QualityWarning {
+  field: string;
+  label_ru: string;
+  severity: string;
+  message: string;
+}
+
+export interface DraftCorrection {
+  field: string;
+  original_value: string;
+  corrected_to: string;
+  reason: string;
+}
+
+export interface ProductSuggestion {
+  name_en: string;
+  name_ru: string;
+  name_pl: string;
+  emoji: string;
+  product_type: string;
+  why_add: string;
+  calories_hint: number | null;
+}
+
+// ── AI Suggest Products ──────────────────────────────────────────────────────
+
+export async function aiSuggestProducts(
+  token: string,
+  query: string,
+): Promise<{
+  suggestions: ProductSuggestion[];
+  query: string;
+  cached: boolean;
+  attempts: number;
+}> {
+  const res = await fetch(`${API_BASE}/api/admin/catalog/ai/suggest-products`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`AI suggest failed: ${text} (${res.status})`);
+  }
+  return res.json();
+}
+
+// ── AI Create Product Draft ──────────────────────────────────────────────────
+
+export async function aiCreateProductDraft(
+  token: string,
+  input: string,
+): Promise<{
+  draft: ProductDraft;
+  raw_input: string;
+  model: string;
+  cached: boolean;
+  corrections: DraftCorrection[];
+}> {
+  const res = await fetch(`${API_BASE}/api/admin/catalog/ai/create-product-draft`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ input }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`AI draft failed: ${text} (${res.status})`);
+  }
+  return res.json();
+}
