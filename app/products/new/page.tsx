@@ -70,15 +70,10 @@ export default function NewProductPage() {
     setError("");
 
     try {
-      // Отправляем все 4 имени (= name_input) + product_type
-      // чтобы бэкенд НЕ вызывал AI при создании.
-      // AI autofill доступен потом через редактирование.
+      // Отправляем только name_input + product_type
+      // Бэкенд вызовет AI для перевода на 4 языка и классификации
       const data: CreateProductRequest = {
         name_input: trimmed,
-        name_en: trimmed,
-        name_pl: trimmed,
-        name_ru: trimmed,
-        name_uk: trimmed,
         product_type: productType,
       };
 
