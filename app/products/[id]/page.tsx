@@ -624,16 +624,28 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         setFoodProps((prev) => ({ ...prev, ...filterNulls(ai.food_properties) }));
       }
 
-      // ── Health profile ──
+      // ── Health profile (i18n) ──
       if (ai.health_profile) {
         setHealthProfile((prev) => ({
           ...prev,
-          bioactive_compounds: ai.health_profile.bioactive_compounds ?? prev.bioactive_compounds,
-          health_effects: ai.health_profile.health_effects ?? prev.health_effects,
-          contraindications: ai.health_profile.contraindications ?? prev.contraindications,
+          bioactive_compounds_en: ai.health_profile.bioactive_compounds_en ?? prev.bioactive_compounds_en,
+          bioactive_compounds_ru: ai.health_profile.bioactive_compounds_ru ?? prev.bioactive_compounds_ru,
+          bioactive_compounds_pl: ai.health_profile.bioactive_compounds_pl ?? prev.bioactive_compounds_pl,
+          bioactive_compounds_uk: ai.health_profile.bioactive_compounds_uk ?? prev.bioactive_compounds_uk,
+          health_effects_en: ai.health_profile.health_effects_en ?? prev.health_effects_en,
+          health_effects_ru: ai.health_profile.health_effects_ru ?? prev.health_effects_ru,
+          health_effects_pl: ai.health_profile.health_effects_pl ?? prev.health_effects_pl,
+          health_effects_uk: ai.health_profile.health_effects_uk ?? prev.health_effects_uk,
+          contraindications_en: ai.health_profile.contraindications_en ?? prev.contraindications_en,
+          contraindications_ru: ai.health_profile.contraindications_ru ?? prev.contraindications_ru,
+          contraindications_pl: ai.health_profile.contraindications_pl ?? prev.contraindications_pl,
+          contraindications_uk: ai.health_profile.contraindications_uk ?? prev.contraindications_uk,
           food_role: ai.health_profile.food_role ?? prev.food_role,
           orac_score: ai.health_profile.orac_score ?? prev.orac_score,
-          absorption_notes: ai.health_profile.absorption_notes ?? prev.absorption_notes,
+          absorption_notes_en: ai.health_profile.absorption_notes_en ?? prev.absorption_notes_en,
+          absorption_notes_ru: ai.health_profile.absorption_notes_ru ?? prev.absorption_notes_ru,
+          absorption_notes_pl: ai.health_profile.absorption_notes_pl ?? prev.absorption_notes_pl,
+          absorption_notes_uk: ai.health_profile.absorption_notes_uk ?? prev.absorption_notes_uk,
         }));
       }
 
@@ -1382,85 +1394,113 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       {/* ── TAB: HEALTH ─────────────────────────────────────────────── */}
       {activeTab === 'health' && (
         <div className="space-y-5">
-          {/* 🔴 MUST HAVE: Bioactive compounds */}
+          {/* 🔴 MUST HAVE: Bioactive compounds (4 langs) */}
           <section className="glass rounded-2xl p-5 space-y-4">
             <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-500" />
               🧬 Биоактивные соединения
             </h2>
-            <p className="text-xs text-muted-foreground">Введите через запятую: beta-carotene, lycopene, quercetin, curcumin…</p>
-            <Textarea
-              rows={2}
-              className="rounded-xl resize-none"
-              placeholder="beta-carotene, lutein, lycopene, polyphenols…"
-              value={(healthProfile.bioactive_compounds ?? []).join(', ')}
-              onChange={(e) => {
-                const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                setHealthProfile((prev) => ({ ...prev, bioactive_compounds: arr }));
-                setDirty(true);
-              }}
-            />
-            {(healthProfile.bioactive_compounds ?? []).length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {(healthProfile.bioactive_compounds ?? []).map((c, i) => (
-                  <Badge key={i} variant="secondary" className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{c}</Badge>
-                ))}
+            <p className="text-xs text-muted-foreground">Введите через запятую на каждом языке</p>
+            {([
+              ['bioactive_compounds_en', '🇬🇧 EN', 'beta-carotene, lutein, lycopene…'],
+              ['bioactive_compounds_ru', '🇷🇺 RU', 'бета-каротин, лютеин, ликопин…'],
+              ['bioactive_compounds_pl', '🇵🇱 PL', 'beta-karoten, luteina, likopen…'],
+              ['bioactive_compounds_uk', '🇺🇦 UK', 'бета-каротин, лютеїн, лікопін…'],
+            ] as [keyof HealthProfileDto, string, string][]).map(([key, lang, ph]) => (
+              <div key={key} className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">{lang}</Label>
+                <Textarea
+                  rows={1}
+                  className="rounded-xl resize-none"
+                  placeholder={ph}
+                  value={((healthProfile[key] as string[] | null | undefined) ?? []).join(', ')}
+                  onChange={(e) => {
+                    const arr = e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean);
+                    setHealthProfile((prev) => ({ ...prev, [key]: arr }));
+                    setDirty(true);
+                  }}
+                />
+                {((healthProfile[key] as string[] | null | undefined) ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {((healthProfile[key] as string[] | null | undefined) ?? []).map((c: string, i: number) => (
+                      <Badge key={i} variant="secondary" className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{c}</Badge>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
           </section>
 
-          {/* 🔴 MUST HAVE: Health effects */}
+          {/* 🔴 MUST HAVE: Health effects (4 langs) */}
           <section className="glass rounded-2xl p-5 space-y-4">
             <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-500" />
               💪 Эффекты для здоровья
             </h2>
-            <p className="text-xs text-muted-foreground">antioxidant, anti-inflammatory, heart-health, bone-health, digestion, immunity…</p>
-            <Textarea
-              rows={2}
-              className="rounded-xl resize-none"
-              placeholder="antioxidant, anti-inflammatory, heart-health…"
-              value={(healthProfile.health_effects ?? []).join(', ')}
-              onChange={(e) => {
-                const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                setHealthProfile((prev) => ({ ...prev, health_effects: arr }));
-                setDirty(true);
-              }}
-            />
-            {(healthProfile.health_effects ?? []).length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {(healthProfile.health_effects ?? []).map((c, i) => (
-                  <Badge key={i} variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{c}</Badge>
-                ))}
+            {([
+              ['health_effects_en', '🇬🇧 EN', 'antioxidant, anti-inflammatory, heart-health…'],
+              ['health_effects_ru', '🇷🇺 RU', 'антиоксидант, противовоспалительное, для сердца…'],
+              ['health_effects_pl', '🇵🇱 PL', 'antyoksydant, przeciwzapalny, zdrowie serca…'],
+              ['health_effects_uk', '🇺🇦 UK', 'антиоксидант, протизапальне, для серця…'],
+            ] as [keyof HealthProfileDto, string, string][]).map(([key, lang, ph]) => (
+              <div key={key} className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">{lang}</Label>
+                <Textarea
+                  rows={1}
+                  className="rounded-xl resize-none"
+                  placeholder={ph}
+                  value={((healthProfile[key] as string[] | null | undefined) ?? []).join(', ')}
+                  onChange={(e) => {
+                    const arr = e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean);
+                    setHealthProfile((prev) => ({ ...prev, [key]: arr }));
+                    setDirty(true);
+                  }}
+                />
+                {((healthProfile[key] as string[] | null | undefined) ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {((healthProfile[key] as string[] | null | undefined) ?? []).map((c: string, i: number) => (
+                      <Badge key={i} variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{c}</Badge>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
           </section>
 
-          {/* 🔴 MUST HAVE: Contraindications */}
+          {/* 🔴 MUST HAVE: Contraindications (4 langs) */}
           <section className="glass rounded-2xl p-5 space-y-4">
             <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-500" />
               ⛔ Противопоказания
             </h2>
-            <p className="text-xs text-muted-foreground">kidney stones, blood thinners, pregnancy, thyroid disorder…</p>
-            <Textarea
-              rows={2}
-              className="rounded-xl resize-none"
-              placeholder="kidney stones, blood thinners, pregnancy…"
-              value={(healthProfile.contraindications ?? []).join(', ')}
-              onChange={(e) => {
-                const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                setHealthProfile((prev) => ({ ...prev, contraindications: arr }));
-                setDirty(true);
-              }}
-            />
-            {(healthProfile.contraindications ?? []).length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {(healthProfile.contraindications ?? []).map((c, i) => (
-                  <Badge key={i} variant="destructive" className="text-xs">{c}</Badge>
-                ))}
+            {([
+              ['contraindications_en', '🇬🇧 EN', 'kidney stones, blood thinners, pregnancy…'],
+              ['contraindications_ru', '🇷🇺 RU', 'камни в почках, разжижители крови, беременность…'],
+              ['contraindications_pl', '🇵🇱 PL', 'kamienie nerkowe, leki rozrzedzające krew…'],
+              ['contraindications_uk', '🇺🇦 UK', 'камені в нирках, розріджувачі крові, вагітність…'],
+            ] as [keyof HealthProfileDto, string, string][]).map(([key, lang, ph]) => (
+              <div key={key} className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">{lang}</Label>
+                <Textarea
+                  rows={1}
+                  className="rounded-xl resize-none"
+                  placeholder={ph}
+                  value={((healthProfile[key] as string[] | null | undefined) ?? []).join(', ')}
+                  onChange={(e) => {
+                    const arr = e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean);
+                    setHealthProfile((prev) => ({ ...prev, [key]: arr }));
+                    setDirty(true);
+                  }}
+                />
+                {((healthProfile[key] as string[] | null | undefined) ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {((healthProfile[key] as string[] | null | undefined) ?? []).map((c: string, i: number) => (
+                      <Badge key={i} variant="destructive" className="text-xs">{c}</Badge>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
           </section>
 
           {/* 🔴 MUST HAVE: Food role */}
@@ -1567,26 +1607,6 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Лучший способ готовки</Label>
-                <Select
-                  value={processingEffects.best_cooking_method ?? '__none__'}
-                  onValueChange={(v) => { setProcessingEffects((prev) => ({ ...prev, best_cooking_method: v === '__none__' ? null : v })); setDirty(true); }}
-                >
-                  <SelectTrigger className="rounded-xl"><SelectValue placeholder="—" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— не указано —</SelectItem>
-                    <SelectItem value="raw">🥬 Сырой</SelectItem>
-                    <SelectItem value="steamed">💨 На пару</SelectItem>
-                    <SelectItem value="boiled">♨️ Варка</SelectItem>
-                    <SelectItem value="baked">🍞 Запекание</SelectItem>
-                    <SelectItem value="grilled">🔥 Гриль</SelectItem>
-                    <SelectItem value="fried">🍳 Жарка</SelectItem>
-                    <SelectItem value="sous_vide">🎛 Су-вид</SelectItem>
-                    <SelectItem value="stewed">🍲 Тушение</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Реакция Майяра, °C</Label>
                 <Input
                   type="number" step="1" min="0" className="rounded-xl tabular-nums"
@@ -1596,15 +1616,46 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Заметки по обработке</Label>
-              <Textarea
-                rows={2}
-                className="rounded-xl resize-none"
-                placeholder="Витамин C разрушается при варке >70°C; лучше тушить..."
-                value={processingEffects.processing_notes ?? ''}
-                onChange={(e) => { setProcessingEffects((prev) => ({ ...prev, processing_notes: e.target.value || null })); setDirty(true); }}
-              />
+            {/* Best cooking method (4 langs) */}
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground font-semibold">Лучший способ готовки</Label>
+              {([
+                ['best_cooking_method_en', '🇬🇧 EN', 'steamed, raw, sous-vide…'],
+                ['best_cooking_method_ru', '🇷🇺 RU', 'на пару, сырой, су-вид…'],
+                ['best_cooking_method_pl', '🇵🇱 PL', 'na parze, surowy, sous-vide…'],
+                ['best_cooking_method_uk', '🇺🇦 UK', 'на парі, сирий, су-від…'],
+              ] as [keyof ProcessingEffectsDto, string, string][]).map(([key, lang, ph]) => (
+                <div key={key} className="flex items-center gap-2">
+                  <span className="text-xs w-12 shrink-0">{lang}</span>
+                  <Input
+                    className="rounded-xl"
+                    placeholder={ph}
+                    value={(processingEffects[key] as string | null | undefined) ?? ''}
+                    onChange={(e) => { setProcessingEffects((prev) => ({ ...prev, [key]: e.target.value || null })); setDirty(true); }}
+                  />
+                </div>
+              ))}
+            </div>
+            {/* Processing notes (4 langs) */}
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground font-semibold">Заметки по обработке</Label>
+              {([
+                ['processing_notes_en', '🇬🇧 EN', 'Vitamin C degrades above 70°C; best steamed…'],
+                ['processing_notes_ru', '🇷🇺 RU', 'Витамин C разрушается при >70°C; лучше тушить…'],
+                ['processing_notes_pl', '🇵🇱 PL', 'Witamina C rozkłada się powyżej 70°C…'],
+                ['processing_notes_uk', '🇺🇦 UK', 'Вітамін C руйнується при >70°C; краще тушкувати…'],
+              ] as [keyof ProcessingEffectsDto, string, string][]).map(([key, lang, ph]) => (
+                <div key={key} className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">{lang}</Label>
+                  <Textarea
+                    rows={1}
+                    className="rounded-xl resize-none"
+                    placeholder={ph}
+                    value={(processingEffects[key] as string | null | undefined) ?? ''}
+                    onChange={(e) => { setProcessingEffects((prev) => ({ ...prev, [key]: e.target.value || null })); setDirty(true); }}
+                  />
+                </div>
+              ))}
             </div>
           </section>
 
@@ -1625,15 +1676,26 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Заметки по усвоению</Label>
-              <Textarea
-                rows={2}
-                className="rounded-xl resize-none"
-                placeholder="Железо лучше усваивается с витамином C; кальций конкурирует с железом…"
-                value={healthProfile.absorption_notes ?? ''}
-                onChange={(e) => { setHealthProfile((prev) => ({ ...prev, absorption_notes: e.target.value || null })); setDirty(true); }}
-              />
+            {/* Absorption notes (4 langs) */}
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground font-semibold">Заметки по усвоению</Label>
+              {([
+                ['absorption_notes_en', '🇬🇧 EN', 'Iron better absorbed with vitamin C…'],
+                ['absorption_notes_ru', '🇷🇺 RU', 'Железо лучше усваивается с витамином C…'],
+                ['absorption_notes_pl', '🇵🇱 PL', 'Żelazo lepiej wchłania się z witaminą C…'],
+                ['absorption_notes_uk', '🇺🇦 UK', 'Залізо краще засвоюється з вітаміном C…'],
+              ] as [keyof HealthProfileDto, string, string][]).map(([key, lang, ph]) => (
+                <div key={key} className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">{lang}</Label>
+                  <Textarea
+                    rows={1}
+                    className="rounded-xl resize-none"
+                    placeholder={ph}
+                    value={(healthProfile[key] as string | null | undefined) ?? ''}
+                    onChange={(e) => { setHealthProfile((prev) => ({ ...prev, [key]: e.target.value || null })); setDirty(true); }}
+                  />
+                </div>
+              ))}
             </div>
           </section>
 

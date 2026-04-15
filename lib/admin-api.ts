@@ -345,12 +345,24 @@ export interface FoodPropertiesDto {
 }
 
 export interface HealthProfileDto {
-  bioactive_compounds?: string[] | null;
-  health_effects?: string[] | null;
-  contraindications?: string[] | null;
+  bioactive_compounds_en?: string[] | null;
+  bioactive_compounds_ru?: string[] | null;
+  bioactive_compounds_pl?: string[] | null;
+  bioactive_compounds_uk?: string[] | null;
+  health_effects_en?: string[] | null;
+  health_effects_ru?: string[] | null;
+  health_effects_pl?: string[] | null;
+  health_effects_uk?: string[] | null;
+  contraindications_en?: string[] | null;
+  contraindications_ru?: string[] | null;
+  contraindications_pl?: string[] | null;
+  contraindications_uk?: string[] | null;
   food_role?: string | null;
   orac_score?: number | null;
-  absorption_notes?: string | null;
+  absorption_notes_en?: string | null;
+  absorption_notes_ru?: string | null;
+  absorption_notes_pl?: string | null;
+  absorption_notes_uk?: string | null;
 }
 
 export interface SugarProfileDto {
@@ -369,9 +381,15 @@ export interface ProcessingEffectsDto {
   vitamin_retention_pct?: number | null;
   protein_denature_temp?: number | null;
   mineral_leaching_risk?: string | null;
-  best_cooking_method?: string | null;
+  best_cooking_method_en?: string | null;
+  best_cooking_method_ru?: string | null;
+  best_cooking_method_pl?: string | null;
+  best_cooking_method_uk?: string | null;
   maillard_temp?: number | null;
-  processing_notes?: string | null;
+  processing_notes_en?: string | null;
+  processing_notes_ru?: string | null;
+  processing_notes_pl?: string | null;
+  processing_notes_uk?: string | null;
 }
 
 export interface CulinaryDto {
