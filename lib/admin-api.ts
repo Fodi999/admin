@@ -344,6 +344,36 @@ export interface FoodPropertiesDto {
   water_activity?: number | null;
 }
 
+export interface HealthProfileDto {
+  bioactive_compounds?: string[] | null;
+  health_effects?: string[] | null;
+  contraindications?: string[] | null;
+  food_role?: string | null;
+  orac_score?: number | null;
+  absorption_notes?: string | null;
+}
+
+export interface SugarProfileDto {
+  glucose?: number | null;
+  fructose?: number | null;
+  sucrose?: number | null;
+  lactose?: number | null;
+  maltose?: number | null;
+  total_sugars?: number | null;
+  added_sugars?: number | null;
+  sweetness_perception?: number | null;
+  sugar_alcohols?: number | null;
+}
+
+export interface ProcessingEffectsDto {
+  vitamin_retention_pct?: number | null;
+  protein_denature_temp?: number | null;
+  mineral_leaching_risk?: string | null;
+  best_cooking_method?: string | null;
+  maillard_temp?: number | null;
+  processing_notes?: string | null;
+}
+
 export interface CulinaryDto {
   sweetness?: number | null;
   acidity?: number | null;
@@ -407,6 +437,9 @@ export interface NutritionProductDetail {
   allergens: AllergensDto | null;
   food_properties: FoodPropertiesDto | null;
   culinary: CulinaryDto | null;
+  health_profile: HealthProfileDto | null;
+  sugar_profile: SugarProfileDto | null;
+  processing_effects: ProcessingEffectsDto | null;
 }
 
 const N = `${API_BASE}/api/admin/nutrition`;
@@ -567,6 +600,45 @@ export async function nutritionUpdateCulinary(
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error('Failed to update culinary');
+}
+
+export async function nutritionUpdateHealthProfile(
+  token: string,
+  id: string,
+  data: HealthProfileDto,
+): Promise<void> {
+  const res = await fetch(`${N}/products/${id}/health-profile`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update health profile');
+}
+
+export async function nutritionUpdateSugarProfile(
+  token: string,
+  id: string,
+  data: SugarProfileDto,
+): Promise<void> {
+  const res = await fetch(`${N}/products/${id}/sugar-profile`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update sugar profile');
+}
+
+export async function nutritionUpdateProcessingEffects(
+  token: string,
+  id: string,
+  data: ProcessingEffectsDto,
+): Promise<void> {
+  const res = await fetch(`${N}/products/${id}/processing-effects`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update processing effects');
 }
 
 // ── AI Autofill ───────────────────────────────────────────────────────────────

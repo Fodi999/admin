@@ -19,6 +19,9 @@ import {
   nutritionUpdateCulinary,
   nutritionUpdateBasic,
   nutritionUpdateFoodProperties,
+  nutritionUpdateHealthProfile,
+  nutritionUpdateSugarProfile,
+  nutritionUpdateProcessingEffects,
   aiAutofillProduct,
   aiGenerateSeo,
   getPairings,
@@ -43,6 +46,9 @@ import {
   type DietFlagsDto,
   type CulinaryDto,
   type FoodPropertiesDto,
+  type HealthProfileDto,
+  type SugarProfileDto,
+  type ProcessingEffectsDto,
   type NutritionBasicRequest,
   type PairingsResponse,
   type PairingItem,
@@ -95,7 +101,7 @@ const SEASON_ICONS: Record<string, string> = {
 
 const MONTH_NAMES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 
-type Tab = 'basic' | 'nutrition' | 'allergens' | 'culinary' | 'seasonality' | 'vitamins' | 'foodprops' | 'seo' | 'pairing' | 'states';
+type Tab = 'basic' | 'nutrition' | 'allergens' | 'culinary' | 'seasonality' | 'vitamins' | 'foodprops' | 'health' | 'seo' | 'pairing' | 'states';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'basic', label: 'Основное', icon: '📦' },
@@ -104,6 +110,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'allergens', label: 'Аллергены', icon: '⚠️' },
   { id: 'culinary', label: 'Кулинария', icon: '👨‍🍳' },
   { id: 'foodprops', label: 'Свойства', icon: '🔬' },
+  { id: 'health', label: 'Здоровье', icon: '💚' },
   { id: 'seasonality', label: 'Сезонность', icon: '📅' },
   { id: 'seo', label: 'SEO', icon: '🔍' },
   { id: 'pairing', label: 'Pairing', icon: '🧬' },
@@ -134,6 +141,9 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   const [dietFlags, setDietFlags] = useState<DietFlagsDto>({});
   const [culinary, setCulinary] = useState<CulinaryDto>({});
   const [foodProps, setFoodProps] = useState<FoodPropertiesDto>({});
+  const [healthProfile, setHealthProfile] = useState<HealthProfileDto>({});
+  const [sugarProfile, setSugarProfile] = useState<SugarProfileDto>({});
+  const [processingEffects, setProcessingEffects] = useState<ProcessingEffectsDto>({});
   const [nutritionBasic, setNutritionBasic] = useState<NutritionBasicRequest>({});
   const [seo, setSeo] = useState({
     seo_title: '',
@@ -225,6 +235,9 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     setDietFlags(n.diet_flags ?? {});
     setCulinary(n.culinary ?? {});
     setFoodProps(n.food_properties ?? {});
+    setHealthProfile(n.health_profile ?? {});
+    setSugarProfile(n.sugar_profile ?? {});
+    setProcessingEffects(n.processing_effects ?? {});
     setNutritionBasic({
       product_type: n.product_type ?? undefined,
       density_g_per_ml: n.density_g_per_ml ?? undefined,
@@ -387,6 +400,24 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       const fresh = await nutritionGetProduct(token, id).catch(() => null);
       if (fresh) { setNutrition(fresh); resetNutritionForms(fresh); }
       setMessage({ type: 'ok', text: '✅ Физические свойства сохранены!' });
+    } catch (err) {
+      setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
+    } finally { setSaving(false); setDirty(false); }
+  }
+
+  async function handleSaveHealth() {
+    const token = getToken();
+    if (!token) { router.push('/login'); return; }
+    setSaving(true); setMessage(null);
+    try {
+      await Promise.all([
+        nutritionUpdateHealthProfile(token, id, healthProfile),
+        nutritionUpdateSugarProfile(token, id, sugarProfile),
+        nutritionUpdateProcessingEffects(token, id, processingEffects),
+      ]);
+      const fresh = await nutritionGetProduct(token, id).catch(() => null);
+      if (fresh) { setNutrition(fresh); resetNutritionForms(fresh); }
+      setMessage({ type: 'ok', text: '✅ Здоровье, сахара и обработка сохранены!' });
     } catch (err) {
       setMessage({ type: 'err', text: `❌ ${err instanceof Error ? err.message : 'Ошибка'}` });
     } finally { setSaving(false); setDirty(false); }
@@ -593,6 +624,29 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         setFoodProps((prev) => ({ ...prev, ...filterNulls(ai.food_properties) }));
       }
 
+      // ── Health profile ──
+      if (ai.health_profile) {
+        setHealthProfile((prev) => ({
+          ...prev,
+          bioactive_compounds: ai.health_profile.bioactive_compounds ?? prev.bioactive_compounds,
+          health_effects: ai.health_profile.health_effects ?? prev.health_effects,
+          contraindications: ai.health_profile.contraindications ?? prev.contraindications,
+          food_role: ai.health_profile.food_role ?? prev.food_role,
+          orac_score: ai.health_profile.orac_score ?? prev.orac_score,
+          absorption_notes: ai.health_profile.absorption_notes ?? prev.absorption_notes,
+        }));
+      }
+
+      // ── Sugar profile ──
+      if (ai.sugar_profile) {
+        setSugarProfile((prev) => ({ ...prev, ...filterNulls(ai.sugar_profile) }));
+      }
+
+      // ── Processing effects ──
+      if (ai.processing_effects) {
+        setProcessingEffects((prev) => ({ ...prev, ...filterNulls(ai.processing_effects) }));
+      }
+
       // ── Nutrition basic (product_type, shelf_life, density, etc.) ──
       setNutritionBasic((prev) => ({
         ...prev,
@@ -667,6 +721,21 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       // Save food properties
       if (ai.food_properties) {
         savePromises.push(nutritionUpdateFoodProperties(token, id, filterNulls(ai.food_properties)));
+      }
+
+      // Save health profile
+      if (ai.health_profile) {
+        savePromises.push(nutritionUpdateHealthProfile(token, id, ai.health_profile));
+      }
+
+      // Save sugar profile
+      if (ai.sugar_profile) {
+        savePromises.push(nutritionUpdateSugarProfile(token, id, filterNulls(ai.sugar_profile)));
+      }
+
+      // Save processing effects
+      if (ai.processing_effects) {
+        savePromises.push(nutritionUpdateProcessingEffects(token, id, filterNulls(ai.processing_effects)));
       }
 
       // Save basic nutrition (density, portion, shelf_life, availability)
@@ -777,6 +846,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     seasonality: handleSaveSeasonality,
     vitamins: handleSaveVitamins,
     foodprops: handleSaveFoodProps,
+    health: handleSaveHealth,
     seo: handleSaveSeo,
     pairing: handleLoadPairings,
     states: () => {},
@@ -1304,6 +1374,272 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
           <div className="flex items-center gap-3">
             <Button onClick={handleSaveFoodProps} disabled={saving} className="h-11 px-8 rounded-xl font-semibold">
               {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Сохранение...</> : <><Save className="mr-2 h-4 w-4" />Сохранить свойства</>}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: HEALTH ─────────────────────────────────────────────── */}
+      {activeTab === 'health' && (
+        <div className="space-y-5">
+          {/* 🔴 MUST HAVE: Bioactive compounds */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              🧬 Биоактивные соединения
+            </h2>
+            <p className="text-xs text-muted-foreground">Введите через запятую: beta-carotene, lycopene, quercetin, curcumin…</p>
+            <Textarea
+              rows={2}
+              className="rounded-xl resize-none"
+              placeholder="beta-carotene, lutein, lycopene, polyphenols…"
+              value={(healthProfile.bioactive_compounds ?? []).join(', ')}
+              onChange={(e) => {
+                const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                setHealthProfile((prev) => ({ ...prev, bioactive_compounds: arr }));
+                setDirty(true);
+              }}
+            />
+            {(healthProfile.bioactive_compounds ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {(healthProfile.bioactive_compounds ?? []).map((c, i) => (
+                  <Badge key={i} variant="secondary" className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{c}</Badge>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* 🔴 MUST HAVE: Health effects */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              💪 Эффекты для здоровья
+            </h2>
+            <p className="text-xs text-muted-foreground">antioxidant, anti-inflammatory, heart-health, bone-health, digestion, immunity…</p>
+            <Textarea
+              rows={2}
+              className="rounded-xl resize-none"
+              placeholder="antioxidant, anti-inflammatory, heart-health…"
+              value={(healthProfile.health_effects ?? []).join(', ')}
+              onChange={(e) => {
+                const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                setHealthProfile((prev) => ({ ...prev, health_effects: arr }));
+                setDirty(true);
+              }}
+            />
+            {(healthProfile.health_effects ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {(healthProfile.health_effects ?? []).map((c, i) => (
+                  <Badge key={i} variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{c}</Badge>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* 🔴 MUST HAVE: Contraindications */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              ⛔ Противопоказания
+            </h2>
+            <p className="text-xs text-muted-foreground">kidney stones, blood thinners, pregnancy, thyroid disorder…</p>
+            <Textarea
+              rows={2}
+              className="rounded-xl resize-none"
+              placeholder="kidney stones, blood thinners, pregnancy…"
+              value={(healthProfile.contraindications ?? []).join(', ')}
+              onChange={(e) => {
+                const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                setHealthProfile((prev) => ({ ...prev, contraindications: arr }));
+                setDirty(true);
+              }}
+            />
+            {(healthProfile.contraindications ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {(healthProfile.contraindications ?? []).map((c, i) => (
+                  <Badge key={i} variant="destructive" className="text-xs">{c}</Badge>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* 🔴 MUST HAVE: Food role */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              🍳 Роль в блюде
+            </h2>
+            <Select
+              value={healthProfile.food_role ?? '__none__'}
+              onValueChange={(v) => { setHealthProfile((prev) => ({ ...prev, food_role: v === '__none__' ? null : v })); setDirty(true); }}
+            >
+              <SelectTrigger className="rounded-xl"><SelectValue placeholder="Выберите роль" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— не указано —</SelectItem>
+                <SelectItem value="protein_source">🥩 Источник белка</SelectItem>
+                <SelectItem value="carb_source">🌾 Источник углеводов</SelectItem>
+                <SelectItem value="fat_source">🫒 Источник жиров</SelectItem>
+                <SelectItem value="flavor_base">🧅 Вкусовая основа</SelectItem>
+                <SelectItem value="aromatic">🌿 Ароматик / специя</SelectItem>
+                <SelectItem value="garnish">🥬 Гарнир / овощная основа</SelectItem>
+                <SelectItem value="binder">🥚 Связующее (яйцо, крахмал)</SelectItem>
+                <SelectItem value="acid">🍋 Кислота / баланс</SelectItem>
+                <SelectItem value="sweetener">🍯 Подсластитель</SelectItem>
+                <SelectItem value="thickener">🧈 Загуститель</SelectItem>
+                <SelectItem value="liquid_base">💧 Жидкая основа</SelectItem>
+                <SelectItem value="topping">🧀 Топпинг</SelectItem>
+                <SelectItem value="fermented">🥒 Ферментированный</SelectItem>
+              </SelectContent>
+            </Select>
+          </section>
+
+          {/* 🟠 IMPORTANT: Sugar Profile */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-orange-500" />
+              🍬 Сахарный профиль (г на 100г)
+            </h2>
+            <div className="grid grid-cols-3 gap-4">
+              {(
+                [
+                  ['glucose', 'Глюкоза'],
+                  ['fructose', 'Фруктоза'],
+                  ['sucrose', 'Сахароза'],
+                  ['lactose', 'Лактоза'],
+                  ['maltose', 'Мальтоза'],
+                  ['total_sugars', 'Всего сахаров'],
+                  ['added_sugars', 'Добавл. сахар'],
+                  ['sweetness_perception', 'Восприятие сладости (1-10)'],
+                  ['sugar_alcohols', 'Сахарные спирты'],
+                ] as [keyof SugarProfileDto, string][]
+              ).map(([key, label]) => (
+                <div key={key} className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">{label}</Label>
+                  <Input
+                    type="number" step="0.01" min="0" className="rounded-xl tabular-nums"
+                    value={sugarProfile[key] ?? ''}
+                    onChange={(e) => { setSugarProfile((prev) => ({ ...prev, [key]: e.target.value ? parseFloat(e.target.value) : null })); setDirty(true); }}
+                    placeholder="—"
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 🟠 IMPORTANT: Processing Effects */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-orange-500" />
+              🔥 Эффекты обработки
+            </h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Сохранение витаминов, %</Label>
+                <Input
+                  type="number" step="0.1" min="0" max="100" className="rounded-xl tabular-nums"
+                  value={processingEffects.vitamin_retention_pct ?? ''}
+                  onChange={(e) => { setProcessingEffects((prev) => ({ ...prev, vitamin_retention_pct: e.target.value ? parseFloat(e.target.value) : null })); setDirty(true); }}
+                  placeholder="60.0 = 60%"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Денатурация белка, °C</Label>
+                <Input
+                  type="number" step="1" min="0" className="rounded-xl tabular-nums"
+                  value={processingEffects.protein_denature_temp ?? ''}
+                  onChange={(e) => { setProcessingEffects((prev) => ({ ...prev, protein_denature_temp: e.target.value ? parseFloat(e.target.value) : null })); setDirty(true); }}
+                  placeholder="°C"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Потеря минералов при варке</Label>
+                <Select
+                  value={processingEffects.mineral_leaching_risk ?? '__none__'}
+                  onValueChange={(v) => { setProcessingEffects((prev) => ({ ...prev, mineral_leaching_risk: v === '__none__' ? null : v })); setDirty(true); }}
+                >
+                  <SelectTrigger className="rounded-xl"><SelectValue placeholder="—" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— не указано —</SelectItem>
+                    <SelectItem value="low">🟢 Низкая</SelectItem>
+                    <SelectItem value="medium">🟡 Средняя</SelectItem>
+                    <SelectItem value="high">🔴 Высокая</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Лучший способ готовки</Label>
+                <Select
+                  value={processingEffects.best_cooking_method ?? '__none__'}
+                  onValueChange={(v) => { setProcessingEffects((prev) => ({ ...prev, best_cooking_method: v === '__none__' ? null : v })); setDirty(true); }}
+                >
+                  <SelectTrigger className="rounded-xl"><SelectValue placeholder="—" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— не указано —</SelectItem>
+                    <SelectItem value="raw">🥬 Сырой</SelectItem>
+                    <SelectItem value="steamed">💨 На пару</SelectItem>
+                    <SelectItem value="boiled">♨️ Варка</SelectItem>
+                    <SelectItem value="baked">🍞 Запекание</SelectItem>
+                    <SelectItem value="grilled">🔥 Гриль</SelectItem>
+                    <SelectItem value="fried">🍳 Жарка</SelectItem>
+                    <SelectItem value="sous_vide">🎛 Су-вид</SelectItem>
+                    <SelectItem value="stewed">🍲 Тушение</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Реакция Майяра, °C</Label>
+                <Input
+                  type="number" step="1" min="0" className="rounded-xl tabular-nums"
+                  value={processingEffects.maillard_temp ?? ''}
+                  onChange={(e) => { setProcessingEffects((prev) => ({ ...prev, maillard_temp: e.target.value ? parseFloat(e.target.value) : null })); setDirty(true); }}
+                  placeholder="°C"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Заметки по обработке</Label>
+              <Textarea
+                rows={2}
+                className="rounded-xl resize-none"
+                placeholder="Витамин C разрушается при варке >70°C; лучше тушить..."
+                value={processingEffects.processing_notes ?? ''}
+                onChange={(e) => { setProcessingEffects((prev) => ({ ...prev, processing_notes: e.target.value || null })); setDirty(true); }}
+              />
+            </div>
+          </section>
+
+          {/* 🟢 NICE TO HAVE: Deeper chemistry */}
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500" />
+              🔬 Глубокая химия
+            </h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">ORAC Score (μmol TE/100г)</Label>
+                <Input
+                  type="number" step="0.1" min="0" className="rounded-xl tabular-nums"
+                  value={healthProfile.orac_score ?? ''}
+                  onChange={(e) => { setHealthProfile((prev) => ({ ...prev, orac_score: e.target.value ? parseFloat(e.target.value) : null })); setDirty(true); }}
+                  placeholder="—"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Заметки по усвоению</Label>
+              <Textarea
+                rows={2}
+                className="rounded-xl resize-none"
+                placeholder="Железо лучше усваивается с витамином C; кальций конкурирует с железом…"
+                value={healthProfile.absorption_notes ?? ''}
+                onChange={(e) => { setHealthProfile((prev) => ({ ...prev, absorption_notes: e.target.value || null })); setDirty(true); }}
+              />
+            </div>
+          </section>
+
+          <div className="flex items-center gap-3">
+            <Button onClick={handleSaveHealth} disabled={saving} className="h-11 px-8 rounded-xl font-semibold">
+              {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Сохранение...</> : <><Save className="mr-2 h-4 w-4" />Сохранить здоровье</>}
             </Button>
           </div>
         </div>
