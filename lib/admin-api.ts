@@ -401,11 +401,18 @@ export interface CulinaryDto {
   texture?: string | null;
 }
 
+export interface CookingBehavior {
+  key: string;
+  type: string;           // texture | flavor | chemistry | pairing | usage
+  effect?: string | null;
+  trigger?: string | null; // heat | raw | acid | fat | time | cold
+  intensity?: number | null;
+  temp_threshold?: number | null;
+  targets?: string[];
+}
+
 export interface CulinaryBehaviorDto {
-  behaviors_en?: string[] | null;
-  behaviors_ru?: string[] | null;
-  behaviors_pl?: string[] | null;
-  behaviors_uk?: string[] | null;
+  behaviors: CookingBehavior[];
 }
 
 export interface NutritionBasicRequest {
