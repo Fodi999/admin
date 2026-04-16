@@ -22,6 +22,7 @@ import {
   nutritionUpdateHealthProfile,
   nutritionUpdateSugarProfile,
   nutritionUpdateProcessingEffects,
+  nutritionUpdateCulinaryBehavior,
   aiAutofillProduct,
   aiGenerateSeo,
   getPairings,
@@ -49,6 +50,7 @@ import {
   type HealthProfileDto,
   type SugarProfileDto,
   type ProcessingEffectsDto,
+  type CulinaryBehaviorDto,
   type NutritionBasicRequest,
   type PairingsResponse,
   type PairingItem,
@@ -140,6 +142,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   const [fattyAcids, setFattyAcids] = useState<FattyAcidsDto>({});
   const [dietFlags, setDietFlags] = useState<DietFlagsDto>({});
   const [culinary, setCulinary] = useState<CulinaryDto>({});
+  const [culinaryBehavior, setCulinaryBehavior] = useState<CulinaryBehaviorDto>({});
   const [foodProps, setFoodProps] = useState<FoodPropertiesDto>({});
   const [healthProfile, setHealthProfile] = useState<HealthProfileDto>({});
   const [sugarProfile, setSugarProfile] = useState<SugarProfileDto>({});
@@ -234,6 +237,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     setFattyAcids(n.fatty_acids ?? {});
     setDietFlags(n.diet_flags ?? {});
     setCulinary(n.culinary ?? {});
+    setCulinaryBehavior(n.culinary_behavior ?? {});
     setFoodProps(n.food_properties ?? {});
     setHealthProfile(n.health_profile ?? {});
     setSugarProfile(n.sugar_profile ?? {});
@@ -350,6 +354,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       await Promise.all([
         nutritionUpdateCulinary(token, id, culinary),
         nutritionUpdateBasic(token, id, nutritionBasic),
+        nutritionUpdateCulinaryBehavior(token, id, culinaryBehavior),
       ]);
       const fresh = await nutritionGetProduct(token, id).catch(() => null);
       if (fresh) { setNutrition(fresh); resetNutritionForms(fresh); }
@@ -619,6 +624,17 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         setCulinary((prev) => ({ ...prev, ...filterNulls(ai.culinary) }));
       }
 
+      // ── Culinary behavior (i18n) ──
+      if (ai.culinary_behavior) {
+        setCulinaryBehavior((prev) => ({
+          ...prev,
+          behaviors_en: ai.culinary_behavior.behaviors_en ?? prev.behaviors_en,
+          behaviors_ru: ai.culinary_behavior.behaviors_ru ?? prev.behaviors_ru,
+          behaviors_pl: ai.culinary_behavior.behaviors_pl ?? prev.behaviors_pl,
+          behaviors_uk: ai.culinary_behavior.behaviors_uk ?? prev.behaviors_uk,
+        }));
+      }
+
       // ── Food properties ──
       if (ai.food_properties) {
         setFoodProps((prev) => ({ ...prev, ...filterNulls(ai.food_properties) }));
@@ -748,6 +764,11 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       // Save processing effects
       if (ai.processing_effects) {
         savePromises.push(nutritionUpdateProcessingEffects(token, id, filterNulls(ai.processing_effects)));
+      }
+
+      // Save culinary behavior
+      if (ai.culinary_behavior) {
+        savePromises.push(nutritionUpdateCulinaryBehavior(token, id, ai.culinary_behavior));
       }
 
       // Save basic nutrition (density, portion, shelf_life, availability)
@@ -1339,6 +1360,32 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                   placeholder="crispy, tender..."
                 />
               </div>
+            </div>
+          </section>
+
+          <section className="glass rounded-2xl p-5 space-y-4">
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">🍳 Поведение в кулинарии (i18n)</h2>
+            <p className="text-xs text-muted-foreground">Короткие фразы через Enter: «быстро размягчается», «хорошо карамелизуется», «подходит для соусов»</p>
+            <div className="grid grid-cols-2 gap-4">
+              {([
+                ['behaviors_en', '🇬🇧 EN'],
+                ['behaviors_ru', '🇷🇺 RU'],
+                ['behaviors_pl', '🇵🇱 PL'],
+                ['behaviors_uk', '🇺🇦 UK'],
+              ] as [keyof CulinaryBehaviorDto, string][]).map(([key, label]) => (
+                <div key={key} className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">{label}</Label>
+                  <textarea
+                    className="w-full rounded-xl border bg-background px-3 py-2 text-sm min-h-[80px]"
+                    value={(culinaryBehavior[key] as string[] | null | undefined)?.join('\n') ?? ''}
+                    onChange={(e) => {
+                      const lines = e.target.value.split('\n').filter((l) => l.trim());
+                      setCulinaryBehavior((prev) => ({ ...prev, [key]: lines.length > 0 ? lines : null }));
+                    }}
+                    placeholder={key === 'behaviors_ru' ? 'быстро размягчается\nхорошо карамелизуется' : key === 'behaviors_en' ? 'softens quickly\ncaramelizes well' : '...'}
+                  />
+                </div>
+              ))}
             </div>
           </section>
 

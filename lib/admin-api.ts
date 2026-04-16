@@ -401,6 +401,13 @@ export interface CulinaryDto {
   texture?: string | null;
 }
 
+export interface CulinaryBehaviorDto {
+  behaviors_en?: string[] | null;
+  behaviors_ru?: string[] | null;
+  behaviors_pl?: string[] | null;
+  behaviors_uk?: string[] | null;
+}
+
 export interface NutritionBasicRequest {
   name_en?: string;
   name_ru?: string;
@@ -455,6 +462,7 @@ export interface NutritionProductDetail {
   allergens: AllergensDto | null;
   food_properties: FoodPropertiesDto | null;
   culinary: CulinaryDto | null;
+  culinary_behavior: CulinaryBehaviorDto | null;
   health_profile: HealthProfileDto | null;
   sugar_profile: SugarProfileDto | null;
   processing_effects: ProcessingEffectsDto | null;
@@ -657,6 +665,19 @@ export async function nutritionUpdateProcessingEffects(
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error('Failed to update processing effects');
+}
+
+export async function nutritionUpdateCulinaryBehavior(
+  token: string,
+  id: string,
+  data: CulinaryBehaviorDto,
+): Promise<void> {
+  const res = await fetch(`${N}/products/${id}/culinary-behavior`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update culinary behavior');
 }
 
 // ── AI Autofill ───────────────────────────────────────────────────────────────
