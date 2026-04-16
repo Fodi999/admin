@@ -1424,23 +1424,22 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                           setCulinaryBehavior({ behaviors: arr });
                         }}
                         className="rounded-lg text-xs h-7"
-                        placeholder="softening"
+                        placeholder="moisture_release"
                       />
                     </div>
                     <div className="space-y-0.5">
                       <Label className="text-[10px] text-muted-foreground">trigger</Label>
                       <Select
-                        value={b.trigger ?? '__none__'}
+                        value={b.trigger ?? 'none'}
                         onValueChange={(v) => {
                           const arr = [...culinaryBehavior.behaviors];
-                          arr[idx] = { ...arr[idx], trigger: v === '__none__' ? undefined : v };
+                          arr[idx] = { ...arr[idx], trigger: v };
                           setCulinaryBehavior({ behaviors: arr });
                         }}
                       >
                         <SelectTrigger className="rounded-lg h-7 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="__none__">—</SelectItem>
-                          {['heat', 'raw', 'acid', 'fat', 'time', 'cold'].map((t) => (
+                          {['heat', 'raw', 'acid', 'fat', 'time', 'cold', 'mixing', 'cooling', 'none'].map((t) => (
                             <SelectItem key={t} value={t}>{t}</SelectItem>
                           ))}
                         </SelectContent>
@@ -1461,6 +1460,45 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                       />
                     </div>
                     <div className="space-y-0.5">
+                      <Label className="text-[10px] text-muted-foreground">polarity</Label>
+                      <Select
+                        value={b.polarity ?? '__none__'}
+                        onValueChange={(v) => {
+                          const arr = [...culinaryBehavior.behaviors];
+                          arr[idx] = { ...arr[idx], polarity: v === '__none__' ? undefined : v };
+                          setCulinaryBehavior({ behaviors: arr });
+                        }}
+                      >
+                        <SelectTrigger className="rounded-lg h-7 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">—</SelectItem>
+                          <SelectItem value="+">+ (увеличивает)</SelectItem>
+                          <SelectItem value="-">− (уменьшает)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px] text-muted-foreground">domain</Label>
+                      <Select
+                        value={b.domain ?? '__none__'}
+                        onValueChange={(v) => {
+                          const arr = [...culinaryBehavior.behaviors];
+                          arr[idx] = { ...arr[idx], domain: v === '__none__' ? undefined : v };
+                          setCulinaryBehavior({ behaviors: arr });
+                        }}
+                      >
+                        <SelectTrigger className="rounded-lg h-7 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">—</SelectItem>
+                          {['flavor', 'physics', 'nutrition'].map((d) => (
+                            <SelectItem key={d} value={d}>{d}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-0.5">
                       <Label className="text-[10px] text-muted-foreground">temp °C</Label>
                       <Input
                         type="number" step="1"
@@ -1472,6 +1510,34 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                         }}
                         className="rounded-lg text-xs h-7 tabular-nums"
                         placeholder="140"
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px] text-muted-foreground">pairing_score</Label>
+                      <Input
+                        type="number" step="0.05" min="0" max="1"
+                        value={b.pairing_score ?? ''}
+                        onChange={(e) => {
+                          const arr = [...culinaryBehavior.behaviors];
+                          arr[idx] = { ...arr[idx], pairing_score: e.target.value ? parseFloat(e.target.value) : undefined };
+                          setCulinaryBehavior({ behaviors: arr });
+                        }}
+                        className="rounded-lg text-xs h-7 tabular-nums"
+                        placeholder="0.85"
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px] text-muted-foreground">targets (comma)</Label>
+                      <Input
+                        value={(b.targets ?? []).join(', ')}
+                        onChange={(e) => {
+                          const arr = [...culinaryBehavior.behaviors];
+                          const targets = e.target.value ? e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+                          arr[idx] = { ...arr[idx], targets };
+                          setCulinaryBehavior({ behaviors: arr });
+                        }}
+                        className="rounded-lg text-xs h-7"
+                        placeholder="milk, cream, yogurt"
                       />
                     </div>
                   </div>

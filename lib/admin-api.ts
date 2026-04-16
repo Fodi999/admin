@@ -405,10 +405,13 @@ export interface CookingBehavior {
   key: string;
   type: string;           // texture | flavor | chemistry | pairing | usage
   effect?: string | null;
-  trigger?: string | null; // heat | raw | acid | fat | time | cold
+  trigger?: string | null; // heat | raw | acid | fat | time | cold | mixing | cooling | none
   intensity?: number | null;
   temp_threshold?: number | null;
   targets?: string[];
+  polarity?: string | null;       // "+" or "-"
+  domain?: string | null;         // flavor | physics | nutrition
+  pairing_score?: number | null;  // 0.0-1.0 for pairing type
 }
 
 export interface CulinaryBehaviorDto {
